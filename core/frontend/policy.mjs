@@ -21,10 +21,30 @@ export const FRONTEND_TIERS = [
   { id: 'strict', title: '别人的卡', summary: '静态检查全开、只能用声明过的能力，默认要你点一下才跑' },
 ];
 
-/** 代码指纹：只认这三段，改一个字就变。 */
-export function frontendCodeHash({ html = '', css = '', js = '' } = {}) {
+/**
+ * 代码指纹：改一个字就变。
+ *
+ * 能力声明也要算进去。卡片可以做到"代码一字不动、只改声明的能力"：
+ * 一张写好了要调用某个能力但没声明、于是被桥拒过的卡，之后把声明补上
+ * 就能悄悄生效——哈希没变，你也不会被再问一次。所以声明的能力是
+ * 这张卡身份的一部分。
+ *
+ * 先归一化成集合再算（去重 + 排序）：只是调了顺序或重复勾了同一个，
+ * 不该让你重新信任一次。
+ *
+ * 注意：从这一版起能力进哈希，所以**改动之前**信任过的卡会对不上，
+ * 需要你再点一次「信任这张卡」。这是往安全那边倒的失败方式。
+ */
+export function frontendCodeHash({ html = '', css = '', js = '', capabilities = [] } = {}) {
+  const caps = [
+    ...new Set(
+      (Array.isArray(capabilities) ? capabilities : [])
+        .map((id) => String(id))
+        .filter(Boolean),
+    ),
+  ].sort();
   return createHash('sha256')
-    .update(`${String(html ?? '')}\u0000${String(css ?? '')}\u0000${String(js ?? '')}`)
+    .update(`${String(html ?? '')}\u0000${String(css ?? '')}\u0000${String(js ?? '')}\u0000${caps.join('\u0001')}`)
     .digest('hex')
     .slice(0, 32);
 }

@@ -20,10 +20,25 @@ import { MODULE_POSITIONS, MODULE_POSITION_IDS, MODULE_SCOPE, lintModuleCss, sco
 
 export { MODULE_POSITIONS, MODULE_POSITION_IDS, MODULE_SCOPE };
 
-/** 代码指纹：改了任何一个字，信任就失效。跟卡内前端同一个思路。 */
+/**
+ * 代码指纹：改了任何一个字，信任就失效。跟卡内前端同一个思路。
+ *
+ * 能力声明同样算进去：模块的代码一字不动、只补一句能力声明，
+ * 也是"这个模块变了"，不该沿用上一次的信任。归一化方式与
+ * frontendCodeHash 一致（去重 + 排序，顺序不影响结果）。
+ */
 export function moduleCodeHash(module = {}) {
+  const caps = [
+    ...new Set(
+      (Array.isArray(module.capabilities) ? module.capabilities : [])
+        .map((id) => String(id))
+        .filter(Boolean),
+    ),
+  ].sort();
   return createHash('sha256')
-    .update(`${String(module.html ?? '')}\u0000${String(module.css ?? '')}\u0000${String(module.js ?? '')}`)
+    .update(
+      `${String(module.html ?? '')}\u0000${String(module.css ?? '')}\u0000${String(module.js ?? '')}\u0000${caps.join('\u0001')}`,
+    )
     .digest('hex')
     .slice(0, 32);
 }

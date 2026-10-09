@@ -4423,6 +4423,39 @@ test('卡内界面：自己的卡自动跑，别人的卡要信任，信任绑�
   assert.equal(hasFrontend(normaliseExtras({}).frontend), false, '没写代码 = 这张卡没有界面');
 });
 
+test('卡内界面：能力声明也算进代码指纹（只补一句声明，信任必须失效）', () => {
+  const base = { html: '<b>x</b>', css: '.a{}', js: 'Tavern.ready();' };
+  const readOnly = frontendCodeHash({ ...base, capabilities: ['chat.vars.read'] });
+
+  // 代码一字不动，只多声明一个能力 → 指纹必须变
+  assert.notEqual(frontendCodeHash({ ...base, capabilities: ['chat.vars.read', 'chat.send'] }), readOnly);
+  // 声明全去掉，也是"变了"
+  assert.notEqual(frontendCodeHash({ ...base, capabilities: [] }), readOnly);
+
+  // 只是顺序不同 / 重复勾同一个，不算变更，否则每次编辑都要重新信任
+  assert.equal(
+    frontendCodeHash({ ...base, capabilities: ['chat.send', 'chat.vars.read'] }),
+    frontendCodeHash({ ...base, capabilities: ['chat.vars.read', 'chat.send'] }),
+  );
+  assert.equal(frontendCodeHash({ ...base, capabilities: ['chat.vars.read', 'chat.vars.read'] }), readOnly);
+
+  // 真实场景：这张卡原本只声明了「读」，你信任过；后来它补上 chat.send
+  const escalated = resolveFrontendPolicy({
+    source: 'imported',
+    codeHash: frontendCodeHash({ ...base, capabilities: ['chat.vars.read', 'chat.send'] }),
+    trust: { codeHash: readOnly },
+  });
+  assert.equal(escalated.trusted, false, '只补了一句能力声明，也要退回未信任');
+  assert.equal(escalated.skipLint, false);
+  assert.equal(escalated.allowExternalAssets, false);
+
+  // 模块（Mod）那边同一套规矩
+  const mod = { html: '<i>x</i>', css: '.b{}', js: 'Tavern.ready();' };
+  const modRead = moduleCodeHash({ ...mod, capabilities: ['chat.vars.read'] });
+  assert.notEqual(moduleCodeHash({ ...mod, capabilities: ['chat.vars.read', 'chat.send'] }), modRead);
+  assert.equal(moduleCodeHash({ ...mod, capabilities: ['chat.vars.read'] }), modRead, '同样的代码和能力，指纹要稳定');
+});
+
 test('插件：manifest 校验与四种钩子', async () => {
   const manifest = normaliseManifest(
     { name: 'hello', title: 'Hello', views: [{ key: 'hello-plugin', file: 'view.mjs' }], modules: [{ id: 'hello-plugin' }] },

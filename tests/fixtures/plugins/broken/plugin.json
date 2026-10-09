@@ -1,0 +1,6 @@
+{
+  "name": "broken",
+  "title": "坏插件",
+  "version": "0.1.0",
+  "description": "故意在加载时抛错：主服务不能因为这个起不来"
+}

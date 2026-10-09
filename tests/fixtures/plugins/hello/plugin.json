@@ -1,0 +1,20 @@
+{
+  "name": "hello",
+  "title": "Hello 插件",
+  "version": "1.0.0",
+  "description": "端到端测试用的示例插件：一个接口 + 一个技能 + 一个 MCP 工具 + 一个视图",
+  "modules": [
+    {
+      "id": "hello-plugin",
+      "area": "platform",
+      "title": "Hello 插件",
+      "summary": "插件机制的示例",
+      "status": "ready",
+      "web": { "view": "hello-plugin", "icon": "👋" },
+      "api": ["/api/hello"],
+      "plan": ["注册接口", "注册技能", "注册 MCP 工具", "注册视图"]
+    }
+  ],
+  "views": [{ "key": "hello-plugin", "file": "view.mjs", "title": "Hello 插件", "icon": "👋" }],
+  "styles": ["style.css"]
+}

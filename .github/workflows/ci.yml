@@ -1,0 +1,34 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # 这个项目零第三方依赖：没有 npm install，也不用构建。
+      - name: 单元测试（引擎与架构）
+        run: node tests/run.mjs
+
+      - name: 接口测试（HTTP 端到端）
+        run: node tests/api-test.mjs
+
+      # 前端冒烟要本机有 Chrome。CI 上装浏览器算额外依赖，所以失败只警告。
+      - name: 前端冒烟（可选）
+        continue-on-error: true
+        run: node work/ui-smoke.mjs

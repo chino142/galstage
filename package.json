@@ -1,0 +1,20 @@
+{
+  "name": "silver-tavern",
+  "version": "0.5.1",
+  "private": true,
+  "description": "以 AI 角色扮演为核心的自托管平台，兼容 SillyTavern 的角色卡 / 世界书 / 预设 / 对话存档。",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "start:multi": "node server/index.mjs --multi-user",
+    "dev": "node --watch server/index.mjs",
+    "test": "node tests/run.mjs",
+    "test:api": "node tests/api-test.mjs",
+    "test:all": "node tests/run.mjs && node tests/api-test.mjs",
+    "bundle": "node scripts/bundle.mjs",
+    "build:exe": "node scripts/build-exe.mjs"
+  }
+}

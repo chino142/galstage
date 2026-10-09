@@ -1,0 +1,17 @@
+# 换行符统一成 LF：这几个是跨平台的纯文本，
+# 尤其 bash 脚本（Termux 那套）要是被 Windows 换成 CRLF，在手机上直接跑不起来。
+* text=auto
+
+*.mjs text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+
+*.png binary
+*.jpg binary
+*.exe binary

@@ -1,0 +1,61 @@
+name: 报个 bug
+description: 有东西坏了 / 行为不对
+title: '[bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先看一眼这几条，能省你不少时间：
+        - 用的是什么版本？（界面左下角 / 启动时那行日志上有版本号）
+        - 控制台（那个黑窗口）里有没有报错？**有报错请贴上来**，比描述有效得多。
+        - 如果是模型相关的，先说清楚用的是哪家、什么模型、是不是中转站。
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 你做了什么、期望看到什么、实际看到什么。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开「演出层」
+        2. 选一条对话
+        3. 点「出一张背景」
+        4. 卡在这里不动了
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      placeholder: 0.5.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: how
+    attributes:
+      label: 怎么跑的
+      options:
+        - Windows 单文件 exe
+        - 源码（node server/index.mjs）
+        - 安卓 Termux
+        - 多用户模式
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 报错 / 日志
+      description: 控制台输出、浏览器 F12 控制台的报错。注意先抹掉 API Key。
+      render: text
+    validations:
+      required: false

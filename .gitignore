@@ -1,0 +1,14 @@
+node_modules/
+data/
+build/
+work/
+outputs/
+*.log
+*.tmp
+.DS_Store
+SilverTavern-Data/
+*.stbk
+*.db
+*.db-wal
+*.db-shm
+master.key

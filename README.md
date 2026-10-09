@@ -326,3 +326,15 @@ docs/    架构说明、功能蓝图、插件写法、多用户与安全说明
 ```
 
 架构与"从哪里开始填功能"见 `docs/ARCHITECTURE.md`，安全边界见 `docs/SECURITY.md`。
+
+## 想自己改的话，从这里开始
+
+不用先读完几百个文件，三步就能上手：
+
+1. **跑起来**：`node server/index.mjs`，浏览器开 `http://127.0.0.1:8788`。
+2. **找到要改的地方**：界面在 `web/`（一个页面一个文件，改完刷新就生效，没有构建步骤）；
+   纯逻辑在 `core/`（不碰 HTTP 和数据库，好改也好测）；接口在 `server/api/`。
+3. **改完自证**：`node tests/run.mjs`、`node tests/api-test.mjs` 跑绿，再 `node scripts/build-exe.mjs` 打包。
+
+`docs/ARCHITECTURE.md` 写了"从哪里开始填功能"，`docs/PLUGINS.md` 写了怎么不动核心代码就加东西。
+遇到问题、想加功能，直接用 AI 改这一份就行 —— 它本来就是这么写出来的。

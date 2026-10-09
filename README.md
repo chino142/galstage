@@ -1,5 +1,10 @@
 # Silver Tavern
 
+[![tests](https://github.com/chino142/galstage/actions/workflows/ci.yml/badge.svg)](https://github.com/chino142/galstage/actions/workflows/ci.yml)
+![无需依赖](https://img.shields.io/badge/依赖-零第三方运行时-brightgreen)
+![Node](https://img.shields.io/badge/Node-%E2%89%A524-339933)
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
+
 自托管的 AI 角色扮演平台：直接吃 SillyTavern 生态的 **角色卡 / 世界书 / 预设 / 对话存档**，
 往 **能演出一部 galgame** 的方向做深。
 

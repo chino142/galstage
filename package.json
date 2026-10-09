@@ -1,6 +1,6 @@
 {
   "name": "silver-tavern",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "以 AI 角色扮演为核心的自托管平台，兼容 SillyTavern 的角色卡 / 世界书 / 预设 / 对话存档。",
   "type": "module",

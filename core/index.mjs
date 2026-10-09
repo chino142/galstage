@@ -22,7 +22,7 @@ import { createFrontendService, THEME_TOKENS } from './frontend/service.mjs';
 import { createPlayingServices } from './chat/service.mjs';
 import { createToolboxServices } from './toolbox/service.mjs';
 
-export const ENGINE_VERSION = '0.5.1';
+export const ENGINE_VERSION = '0.5.2';
 
 export function createEngine({ settings = {}, bus = appBus, ports = {} } = {}) {
   const registry = createRegistry(MODULES);

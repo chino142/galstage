@@ -129,6 +129,11 @@ export function createLauncher({ logger = console } = {}) {
       if (process.platform === 'win32' && pid) {
         // 代理常常自己再拉起子进程，光 kill 父进程杀不干净
         spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+      } else if (entry.adopted && pid) {
+        // 接管来的进程只有一个记下来的 PID，没有 child 句柄 —— adopt() 里那个 child 是空壳，
+        // 调它的 kill() 等于什么都没做。以前只有 Windows 的 taskkill 兜着，Linux / macOS
+        // 上就是"点了停止没反应"，进程一直留在后台占显存。这里按 PID 真杀一次。
+        process.kill(pid, 'SIGTERM');
       } else {
         entry.child.kill('SIGTERM');
       }

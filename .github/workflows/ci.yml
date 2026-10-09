@@ -28,7 +28,5 @@ jobs:
       - name: 接口测试（HTTP 端到端）
         run: node tests/api-test.mjs
 
-      # 前端冒烟要本机有 Chrome。CI 上装浏览器算额外依赖，所以失败只警告。
-      - name: 前端冒烟（可选）
-        continue-on-error: true
-        run: node work/ui-smoke.mjs
+      # 前端冒烟（无头浏览器点一遍所有视图）跑不了 CI：它在本机的 work/ 目录里，
+      # 而 work/ 不进仓库（草稿区）。要跑就在本地跑：node work/ui-smoke.mjs

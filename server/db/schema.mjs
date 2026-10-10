@@ -824,3 +824,67 @@ export const SCHEMA_V18 = [
      updated_at TEXT NOT NULL
    )`,
 ];
+
+/**
+ * V19：角色卡的「剧本状态」。
+ *
+ * 想玩 / 在玩 / 已完结 / 搁置 —— 卡一多就得靠这个筛和看进度；空串表示没标。
+ * 单独一张表而不是 ALTER 加列：ALTER 没有 IF NOT EXISTS，迁移重放会炸
+ *（v18 的注释里也是这个理由）。没标的卡这里就没有行，取的时候当 ''。
+ */
+export const SCHEMA_V19 = [
+  `CREATE TABLE IF NOT EXISTS character_status (
+     character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+     status TEXT NOT NULL DEFAULT '',
+     updated_at TEXT NOT NULL
+   )`,
+];
+
+/**
+ * V20：坑本（想开的坑 / 灵感计划板）。
+ *
+ * 还没成卡的想法先记在这里：标题、一句话简介、标签、备注、封面；想开演时一键转成角色卡
+ * （card_id 记下转成了哪张），不删记录 —— 方便回头看看自己攒了多少坑。
+ */
+export const SCHEMA_V20 = [
+  `CREATE TABLE IF NOT EXISTS story_plans (
+     id TEXT PRIMARY KEY,
+     title TEXT NOT NULL,
+     summary TEXT NOT NULL DEFAULT '',
+     tags TEXT NOT NULL DEFAULT '[]',
+     cover_asset_id TEXT,
+     note TEXT NOT NULL DEFAULT '',
+     status TEXT NOT NULL DEFAULT 'idea',
+     card_id TEXT,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL
+   )`,
+];
+
+/**
+ * V21：剧本合集（分组 → 分类 → 卡）。
+ *
+ * 两级就够：分组（parent_id 为空）+ 分类（parent_id 指向分组）。一张卡可以同时属于多个分类。
+ * 删分组会连坐删掉它下面的分类（外键 CASCADE）；分类里的卡本身不动。
+ */
+export const SCHEMA_V21 = [
+  `CREATE TABLE IF NOT EXISTS card_collections (
+     id TEXT PRIMARY KEY,
+     name TEXT NOT NULL,
+     parent_id TEXT REFERENCES card_collections(id) ON DELETE CASCADE,
+     order_index INTEGER NOT NULL DEFAULT 100,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL
+   )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_card_collections_parent ON card_collections (parent_id)`,
+
+  `CREATE TABLE IF NOT EXISTS card_collection_items (
+     collection_id TEXT NOT NULL REFERENCES card_collections(id) ON DELETE CASCADE,
+     character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+     created_at TEXT NOT NULL,
+     PRIMARY KEY (collection_id, character_id)
+   )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_card_collection_items_char ON card_collection_items (character_id)`,
+];

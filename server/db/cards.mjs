@@ -18,6 +18,18 @@ import { NotFoundError, ValidationError } from '../../core/errors.mjs';
 
 const CARD_COLUMNS = `id, name, spec_version, data, avatar_asset_id, source, favorite, created_at, updated_at`;
 
+/** 剧本状态存在单独一张表里（见 schema V19），取的时候现查一下；没标就是 ''。 */
+const STATUS_SELECT = `(SELECT s.status FROM character_status s WHERE s.character_id = c.id) AS status`;
+
+/** 写状态：没有就插，有就改。 */
+function writeStatus(repo, id, status, now) {
+  repo.run(
+    `INSERT INTO character_status (character_id, status, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(character_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`,
+    [id, String(status ?? ''), now],
+  );
+}
+
 function rowToCard(row) {
   if (!row) return null;
   return {
@@ -28,6 +40,7 @@ function rowToCard(row) {
     avatarAssetId: row.avatar_asset_id ?? null,
     source: row.source ?? 'original',
     favorite: Boolean(row.favorite),
+    status: row.status ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     tags: [],
@@ -118,7 +131,7 @@ export function createCardStore({ repo, dataDir = null }) {
 
   // ---------------------------------------------------------------- 查询
 
-  function list({ q = '', tag = '', favorite = null, source = '', sort = 'updated', limit = 200, offset = 0 } = {}) {
+  function list({ q = '', tag = '', favorite = null, source = '', status = '', sort = 'updated', limit = 200, offset = 0 } = {}) {
     const where = [];
     const params = [];
     if (q) {
@@ -135,6 +148,10 @@ export function createCardStore({ repo, dataDir = null }) {
       where.push('c.source = ?');
       params.push(source);
     }
+    if (status) {
+      where.push('EXISTS (SELECT 1 FROM character_status s WHERE s.character_id = c.id AND s.status = ?)');
+      params.push(status);
+    }
 
     const order = sort === 'name' ? 'c.name COLLATE NOCASE ASC' : sort === 'created' ? 'c.created_at DESC' : 'c.updated_at DESC';
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -142,7 +159,7 @@ export function createCardStore({ repo, dataDir = null }) {
     const lim = Math.max(1, Math.min(1000, Number(limit) || 200));
     const off = Math.max(0, Number(offset) || 0);
     const rows = repo.all(
-      `SELECT ${CARD_COLUMNS},
+      `SELECT ${CARD_COLUMNS}, ${STATUS_SELECT},
           (SELECT COUNT(*) FROM character_versions v WHERE v.character_id = c.id) AS version_count,
           (SELECT COUNT(*) FROM chats ch WHERE ch.character_id = c.id AND ch.is_group = 0) AS chat_count
         FROM characters c ${whereSql}
@@ -155,7 +172,7 @@ export function createCardStore({ repo, dataDir = null }) {
 
   function get(id) {
     const row = repo.get(
-      `SELECT ${CARD_COLUMNS},
+      `SELECT ${CARD_COLUMNS}, ${STATUS_SELECT},
           (SELECT COUNT(*) FROM character_versions v WHERE v.character_id = c.id) AS version_count,
           (SELECT COUNT(*) FROM chats ch WHERE ch.character_id = c.id AND ch.is_group = 0) AS chat_count
         FROM characters c WHERE c.id = ?`,
@@ -176,7 +193,7 @@ export function createCardStore({ repo, dataDir = null }) {
 
   // ---------------------------------------------------------------- 写入
 
-  function insert({ name, specVersion = 'v2', data = {}, source = 'original', tags = [], favorite = false, avatar = null } = {}) {
+  function insert({ name, specVersion = 'v2', data = {}, source = 'original', tags = [], favorite = false, status = '', avatar = null } = {}) {
     const id = newId('char');
     const now = nowIso();
     const cardName = String(name ?? data.name ?? '').trim() || '未命名';
@@ -185,6 +202,7 @@ export function createCardStore({ repo, dataDir = null }) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, cardName, specVersion, JSON.stringify(data ?? {}), null, source, favorite ? 1 : 0, now, now],
     );
+    if (String(status ?? '')) writeStatus(repo, id, status, now);
     setTags(id, tags);
     if (avatar) {
       const rel = saveAvatar(id, avatar);
@@ -218,6 +236,9 @@ export function createCardStore({ repo, dataDir = null }) {
     if (patch.favorite !== undefined) {
       fields.push('favorite = ?');
       params.push(patch.favorite ? 1 : 0);
+    }
+    if (patch.status !== undefined) {
+      writeStatus(repo, id, patch.status, nowIso());
     }
     if (patch.avatar !== undefined) {
       const rel = patch.avatar ? saveAvatar(id, patch.avatar) : null;

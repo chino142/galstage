@@ -26,6 +26,7 @@ import { resolveNote, normaliseNote, shouldInject, describeNote } from '../core/
 import { substituteOriginal } from '../core/prompts/assemble.mjs';
 import { presetSamplingParams, PRESET_PARAM_MODE_IDS } from '../core/prompts/preset-params.mjs';
 import { splitThinkingTags } from '../core/chat/thinking.mjs';
+import { describeBond } from '../core/chat/bond.mjs';
 import { presetOptions, applyFormatTemplate } from '../core/prompts/preset-options.mjs';
 import {
   SAMPLER_CATALOG,
@@ -120,7 +121,7 @@ import {
   readCardTextChunks,
   extractCardJsonFromPng,
 } from '../core/cards/cardfile.mjs';
-import { createCardService } from '../core/cards/service.mjs';
+import { createCardService, CARD_STATUSES, normalizeStatus } from '../core/cards/service.mjs';
 import { createCardStore } from '../server/db/cards.mjs';
 import { convertDocument, normalizeWorldBook, detectShape } from '../core/worldbook/shapes.mjs';
 import {
@@ -191,6 +192,10 @@ import { cacheSavings, estimationDelta, fillDays, normaliseUsage, PRICE_PRESETS 
 import { createCostStore } from '../server/db/cost.mjs';
 import { buildReport, longestStreak, normalisePeriod } from '../core/toolbox/review.mjs';
 import { createReviewStore } from '../server/db/review.mjs';
+import { createPlansStore } from '../server/db/plans.mjs';
+import { createPlansService, PLAN_STATUSES, normalizePlanStatus } from '../core/plans/service.mjs';
+import { createCollectionsStore } from '../server/db/collections.mjs';
+import { createCollectionsService } from '../core/collections/service.mjs';
 import { createMcpServer as createTavernMcpServer, MCP_RETURN_MODES } from '../core/mcp/server.mjs';
 import { createZip, readZip } from '../server/toolbox/zip.mjs';
 import { createBackupStore } from '../server/db/backup.mjs';
@@ -453,6 +458,7 @@ test('引擎：模块冻结、服务齐全、蓝图数据可用', () => {
   assert.deepEqual(Object.keys(engine.services).sort(), [
     'cards',
     'chat',
+    'collections',
     'comfy',
     'cost',
     'frontend',
@@ -460,6 +466,7 @@ test('引擎：模块冻结、服务齐全、蓝图数据可用', () => {
     'maintenance',
     'memory',
     'narration',
+    'plans',
     'prompts',
     'review',
     'state',
@@ -6244,6 +6251,216 @@ test('按本机模型生成预设：认得"拆开加载"，采样参数也跟着
 
   // 认不出来 → unknown
   assert.equal(deriveLoaderProfile({ 1: { class_type: 'CLIPTextEncode', inputs: { text: 'x' } } }).style, 'unknown');
+});
+
+test('工具箱：备份目录可以指到别处（比如同步盘），建不出来就退回默认', () => {
+  const { db, dir, cleanup } = makeTempDb();
+  try {
+    const store = createBackupStore({ rawDb: db.db, repo: db.repo, dataDir: dir, logger: silentLogger });
+    assert.equal(store.dir(), path.join(dir, 'backups'), '默认还是数据目录下的 backups');
+    const first = store.create({ label: '默认目录' });
+    assert.ok(existsSync(path.join(dir, 'backups', `${first.name}.zip`)));
+
+    // 设置里填一个自定义目录（同步盘就长这样）→ 新备份落到那儿
+    const custom = mkdtempSync(path.join(tmpdir(), 'tavern-backups-'));
+    writeSettings(db.repo, { 'data.backupDir': custom });
+    assert.equal(store.dir(), custom, '填了就放那儿');
+    const second = store.create({ label: '同步盘' });
+    assert.ok(existsSync(path.join(custom, `${second.name}.zip`)), '新备份落到自定义目录');
+    assert.ok(store.list().some((item) => item.name === second.name), '列表也跟着走');
+    assert.ok((store.readBytes(second.name)?.length ?? 0) > 0, '读得回来');
+    assert.ok(store.find(second.name), '也找得到');
+    try {
+      rmSync(custom, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch {
+      // 删不掉不影响断言
+    }
+
+    // 目录建不出来（路径中间是个文件）→ 退回默认，不能让备份整个挂掉
+    const blocker = path.join(dir, 'blocker.txt');
+    writeFileSync(blocker, 'x');
+    writeSettings(db.repo, { 'data.backupDir': path.join(blocker, 'sub') });
+    assert.equal(store.dir(), path.join(dir, 'backups'), '建不出来就退回默认');
+    const third = store.create({ label: '退回默认' });
+    assert.ok(existsSync(path.join(dir, 'backups', `${third.name}.zip`)));
+  } finally {
+    cleanup();
+  }
+});
+
+test('角色卡：剧本状态（想玩 / 在玩 / 已完结 / 搁置）能存能筛', () => {
+  const { db, dir, cleanup } = makeTempDb();
+  try {
+    assert.ok(db.repo.get('SELECT MAX(version) AS v FROM schema_migrations').v >= 19, 'schema 至少到 v19');
+    assert.ok(db.repo.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'character_status'"), 'character_status 表要建出来');
+    assert.deepEqual(CARD_STATUSES.map((item) => item.id), ['', 'wish', 'playing', 'done', 'paused']);
+    assert.equal(normalizeStatus('playing'), 'playing');
+    assert.equal(normalizeStatus('乱写的值'), '', '认不出来的一律当没标');
+    assert.equal(normalizeStatus(undefined), '');
+
+    const store = createCardStore({ repo: db.repo, dataDir: dir });
+    const a = store.insert({ name: '甲', data: { name: '甲' }, status: 'playing' });
+    const b = store.insert({ name: '乙', data: { name: '乙' } });
+    assert.equal(a.status, 'playing');
+    assert.equal(b.status, '');
+    assert.equal(store.get(a.id).status, 'playing');
+
+    const playing = store.list({ status: 'playing' });
+    assert.equal(playing.items.length, 1);
+    assert.equal(playing.items[0].id, a.id);
+    assert.equal(store.list({ status: 'done' }).items.length, 0);
+    assert.equal(store.list({}).items.length, 2, '不传 status 就是全部');
+
+    assert.equal(store.update(a.id, { status: 'done' }).status, 'done');
+    assert.equal(store.list({ status: 'playing' }).items.length, 0);
+    assert.equal(store.list({ status: 'done' }).items.length, 1);
+  } finally {
+    cleanup();
+  }
+});
+
+test('玩卡区服务：下一轮带上羁绊（认识第几天 / 上次见面），关掉就不带', async () => {
+  const { db, cleanup } = makeTempDb();
+  try {
+    const store = createChatStore({ repo: db.repo });
+    const seen = [];
+    const models = {
+      async *chat(_providerId, args = {}) {
+        // 整段参数都记下来：注入（导演 / 羁绊）走的是 system，不在 messages 里
+        seen.push(JSON.stringify(args));
+        yield { type: 'text', text: '喵。' };
+        yield { type: 'usage', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
+      },
+      async complete() {
+        return { text: 'ok' };
+      },
+    };
+    const ports = {
+      chatStore: store,
+      models,
+      resolveBinding: () => ({ providerId: 'p1', model: 'mock', params: {}, source: 'default', sourceTitle: '全局默认' }),
+      providerParams: () => ({}),
+    };
+    const { chat } = createPlayingServices({ settings: { stateEnabled: false }, ports });
+    const created = await chat.create({ title: '羁绊', character: { name: '阿狸', description: '猫', first_mes: '喵。' } });
+    const drain = async (gen) => {
+      for await (const _chunk of gen) {
+        // 跑完这一轮
+      }
+    };
+
+    await drain(chat.send(created.id, { text: '在吗' }));
+    // 开场白已经落了一条"角色说过的话"，所以第一轮就该有羁绊
+    assert.ok(seen.at(-1).includes('羁绊'), '有开场白之后就该带羁绊');
+    assert.ok(seen.at(-1).includes('认识第 1 天'), '今天第一次，就是第 1 天');
+    await drain(chat.send(created.id, { text: '又来了' }));
+    assert.ok(seen.at(-1).includes('羁绊'), '第二轮要带上羁绊');
+
+    const off = createPlayingServices({ settings: { stateEnabled: false, 'chat.bondContext': false }, ports });
+    await drain(off.chat.send(created.id, { text: '还在' }));
+    assert.ok(!seen.at(-1).includes('羁绊'), '关掉之后不再注入');
+
+    // 纯函数：日期边界
+    assert.equal(describeBond({}), null, '没历史就不给');
+    assert.ok(describeBond({ name: '甲', firstAt: '2026-01-01T00:00:00Z', lastAt: '2026-01-01T00:00:00Z', count: 3, now: new Date('2026-01-01T09:00:00') }).includes('今天已经聊过了'));
+    assert.ok(describeBond({ name: '甲', firstAt: '2026-01-01T00:00:00Z', lastAt: '2026-01-02T00:00:00Z', count: 3, now: new Date('2026-01-03T09:00:00') }).includes('上次见面是昨天'));
+    assert.ok(describeBond({ name: '甲', firstAt: '2026-01-01T00:00:00Z', lastAt: '2026-01-01T00:00:00Z', count: 3, now: new Date('2026-01-05T09:00:00') }).includes('上次见面是 4 天前'));
+
+    // 存储统计：按角色 / 成员任一命中都算
+    const bondKey = created.members?.[0]?.characterId ?? created.members?.[0]?.id;
+    const stats = store.bondStats(bondKey);
+    assert.ok(stats && stats.count >= 2, `要数出这个角色说过几句，实际：${JSON.stringify(stats)}`);
+    assert.equal(store.bondStats(null), null);
+  } finally {
+    cleanup();
+  }
+});
+
+test('坑本：记下来、改状态、一键开演变成角色卡', async () => {
+  const { db, dir, cleanup } = makeTempDb();
+  try {
+    assert.ok(db.repo.get('SELECT MAX(version) AS v FROM schema_migrations').v >= 20, 'schema 至少到 v20');
+    assert.ok(db.repo.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'story_plans'"), 'story_plans 表要建出来');
+    assert.deepEqual(PLAN_STATUSES.map((item) => item.id), ['idea', 'drafting', 'ready', 'archived']);
+    assert.equal(normalizePlanStatus('drafting'), 'drafting');
+    assert.equal(normalizePlanStatus('瞎写'), 'idea', '认不出来就当"只是个想法"');
+
+    const cards = createCardStore({ repo: db.repo, dataDir: dir });
+    const cardService = createCardService({ ports: { cardStore: cards } });
+    const plans = createPlansService({ ports: { plansStore: createPlansStore({ repo: db.repo }), cards: cardService } });
+
+    // 空的时候好说
+    assert.deepEqual(plans.list(), { items: [], total: 0 });
+    assert.throws(() => plans.save({ summary: '没标题' }), /标题/);
+
+    const plan = plans.save({ title: '雨夜书店', summary: '狐狸老板娘', tags: ['狐狸', '书店'], note: '想演重逢' });
+    assert.equal(plan.status, 'idea');
+    assert.deepEqual(plan.tags, ['狐狸', '书店']);
+    assert.equal(plans.list().total, 1);
+
+    const drafting = plans.save({ ...plan, status: 'drafting' });
+    assert.equal(drafting.status, 'drafting');
+    assert.equal(drafting.createdAt, plan.createdAt, '改的时候不该把创建时间改掉');
+    assert.equal(plans.list({ status: 'drafting' }).total, 1);
+    assert.equal(plans.list({ status: 'idea' }).total, 0);
+
+    // 开演：按坑本里的设定建卡，并记下 card_id
+    const card = await plans.promote(plan.id);
+    assert.equal(card.name, '雨夜书店');
+    assert.equal(card.data.description, '狐狸老板娘');
+    assert.deepEqual(card.tags, ['狐狸', '书店']);
+    const after = plans.get(plan.id);
+    assert.equal(after.cardId, card.id, '要记下转成了哪张卡');
+    assert.equal(after.status, 'ready');
+    assert.equal(plans.list().total, 1, '开演之后记录还在');
+
+    assert.equal(plans.remove(plan.id), true);
+    assert.equal(plans.list().total, 0);
+    assert.throws(() => plans.remove('不存在'), /没有这个坑/);
+  } finally {
+    cleanup();
+  }
+});
+
+test('剧本合集：两级分类、一张卡能进多个分类、删分组不删卡', () => {
+  const { db, dir, cleanup } = makeTempDb();
+  try {
+    assert.ok(db.repo.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'card_collections'"), 'card_collections 表要建出来');
+    const cards = createCardStore({ repo: db.repo, dataDir: dir });
+    const one = cards.insert({ name: '甲', data: { name: '甲' } });
+    const two = cards.insert({ name: '乙', data: { name: '乙' } });
+    const collections = createCollectionsService({ ports: { collectionsStore: createCollectionsStore({ repo: db.repo }) } });
+
+    assert.deepEqual(collections.list().items, []);
+
+    const group = collections.save({ name: '雪国' });
+    const categoryA = collections.save({ name: '主线', parentId: group.id });
+    const categoryB = collections.save({ name: '支线', parentId: group.id });
+    assert.equal(collections.list().items.length, 3);
+    assert.equal(categoryA.parentId, group.id);
+
+    // 只分两级
+    assert.throws(() => collections.save({ name: '再套一层', parentId: categoryA.id }), /两级/);
+    assert.throws(() => collections.save({ name: '挂到不存在的分组', parentId: 'nope' }), /没有这个分组/);
+    assert.throws(() => collections.save({ name: '   ' }), /名字/);
+
+    // 一张卡同时进两个分类
+    collections.addCards(categoryA.id, [one.id, two.id]);
+    collections.addCards(categoryB.id, [one.id]);
+    assert.deepEqual(collections.cards(categoryA.id).items.map((card) => card.name).sort(), ['乙', '甲'].sort());
+    assert.equal(collections.cards(categoryB.id).items.length, 1);
+    assert.equal(collections.list().items.find((c) => c.id === categoryA.id).cardCount, 2);
+
+    collections.removeCards(categoryA.id, [two.id]);
+    assert.equal(collections.cards(categoryA.id).items.length, 1);
+
+    // 删分组：分类跟着走，卡本身留着
+    collections.remove(group.id);
+    assert.equal(collections.list().items.length, 0);
+    assert.ok(cards.get(one.id) && cards.get(two.id), '删合集不能把卡删掉');
+  } finally {
+    cleanup();
+  }
 });
 
 const result = await run();

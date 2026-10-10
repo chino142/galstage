@@ -14,8 +14,10 @@ import * as pluginsApi from './plugins.mjs';
 import * as stagingApi from './staging.mjs';
 import * as studioApi from './studio.mjs';
 import * as galgameApi from './galgame.mjs';
+import * as plansApi from './plans.mjs';
+import * as collectionsApi from './collections.mjs';
 
-export const API_MODULES = [system, characters, writing, playing, platform, modelsApi, mcpApi, agentApi, creativeApi, pluginsApi, stagingApi, studioApi, toolbox, galgameApi];
+export const API_MODULES = [system, characters, writing, playing, platform, modelsApi, mcpApi, agentApi, creativeApi, pluginsApi, stagingApi, studioApi, toolbox, galgameApi, plansApi, collectionsApi];
 
 export function registerApi(router, deps) {
   for (const mod of API_MODULES) mod.register(router, deps);

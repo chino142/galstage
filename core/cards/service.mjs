@@ -45,6 +45,23 @@ export function normalizeSpec(value, fallback = 'v2') {
 
 const FIELD_KEYS = CARD_FIELDS.map((field) => field.key).filter((key) => key !== 'avatar');
 
+/** 剧本状态：卡一多就靠它筛和看进度。'' = 没标。 */
+export const CARD_STATUSES = [
+  { id: '', title: '未标记' },
+  { id: 'wish', title: '想玩' },
+  { id: 'playing', title: '在玩' },
+  { id: 'done', title: '已完结' },
+  { id: 'paused', title: '搁置' },
+];
+
+const CARD_STATUS_IDS = new Set(CARD_STATUSES.map((item) => item.id));
+
+/** 认不出来的状态一律当"没标"，别让脏数据进库。 */
+export function normalizeStatus(value) {
+  const id = String(value ?? '').trim();
+  return CARD_STATUS_IDS.has(id) ? id : '';
+}
+
 /** 标签去重、去空白，保持用户写的顺序。 */
 export function normalizeTags(value) {
   if (!Array.isArray(value)) return [];
@@ -115,6 +132,7 @@ export function createCardService({ settings, ports = {} } = {}) {
         source: payload.source ?? 'original',
         tags: normalizeTags(payload.tags ?? data.tags),
         favorite: Boolean(payload.favorite),
+        status: normalizeStatus(payload.status),
         avatar: payload.avatar ?? null,
       });
     },
@@ -136,6 +154,7 @@ export function createCardService({ settings, ports = {} } = {}) {
       }
       if (patch.specVersion !== undefined) next.specVersion = normalizeSpec(patch.specVersion, existing.specVersion);
       if (patch.favorite !== undefined) next.favorite = Boolean(patch.favorite);
+      if (patch.status !== undefined) next.status = normalizeStatus(patch.status);
       if (patch.tags !== undefined) next.tags = normalizeTags(patch.tags);
       if (patch.source !== undefined) next.source = patch.source;
       if (patch.avatar !== undefined) next.avatar = patch.avatar;

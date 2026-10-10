@@ -159,7 +159,7 @@ export function createBackupView(module) {
       panel(
         '备份',
         `${items.length} 份`,
-        h('div', { class: 'panel-note' }, `备份目录：${payload.directory ?? '（未启用）'}。备份是一个 zip：数据库快照 + 素材 + manifest，可以整个拷走。`),
+        h('div', { class: 'panel-note' }, `备份目录：${payload.directory ?? '（未启用）'}（想放同步盘就改「设置 → 备份目录」）。备份是一个 zip：数据库快照 + 素材 + manifest，可以整个拷走。`),
         h(
           'div',
           { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'end', marginTop: '10px' } },

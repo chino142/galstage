@@ -570,6 +570,23 @@ export function createChatStore({ repo }) {
     };
   }
 
+  /**
+   * 一个角色的"羁绊"统计：第一次说话、最近一次说话、一共多少条。
+   * 只数角色自己说的（role = assistant），用户那半不算 —— "陪了你多少句"说的是它。
+   */
+  function bondStats(key) {
+    if (!key) return null;
+    const row = repo.get(
+      `SELECT COUNT(*) AS n, MIN(created_at) AS first_at, MAX(created_at) AS last_at
+         FROM chat_messages
+        WHERE is_system = 0 AND role = 'assistant' AND (character_id = ? OR member_id = ?)`,
+      [key, key],
+    );
+    const count = Number(row?.n ?? 0);
+    if (!count || !row?.first_at) return null;
+    return { count, firstAt: row.first_at, lastAt: row.last_at ?? row.first_at };
+  }
+
   return {
     listChats,
     getChat,
@@ -600,5 +617,6 @@ export function createChatStore({ repo }) {
     removeSnapshot,
     saveActions,
     latestActions,
+    bondStats,
   };
 }

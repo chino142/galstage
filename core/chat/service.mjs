@@ -29,6 +29,7 @@ import { presetOptions } from '../prompts/preset-options.mjs';
 import { applyOutputMarker, presetToolPlan } from '../prompts/preset-tools.mjs';
 import { modulePlan } from '../prompts/modules.mjs';
 import { splitThinkingTags } from './thinking.mjs';
+import { describeBond } from './bond.mjs';
 import {
   applyStateDelta,
   emptyWorldState,
@@ -452,6 +453,19 @@ async function* generateTurn(ctx, { chat, member, kind = 'reply', input = {} }) 
     injections.push(settings.impersonateNudge ?? presetOpts.impersonateNudge ?? '[替我写一句我会说的话，只写一句话，不要加引号。]');
   }
   if (input.injection) injections.push(input.injection);
+
+  // 羁绊：让角色知道"你们认识多久了、上次见面是什么时候"，而不是每次都像第一次见面。
+  // 可关（设置 → 对话 → 羁绊提示）；没历史、算不出来就跳过，绝不影响这一轮。
+  const bondKey = member?.characterId ?? member?.id ?? null;
+  if (kind !== 'impersonate' && ctx.settings?.['chat.bondContext'] !== false && bondKey && ctx.store?.bondStats) {
+    try {
+      const stats = ctx.store.bondStats(bondKey);
+      const line = describeBond({ ...(stats ?? {}), name: member?.card?.name ?? member?.name, now: new Date() });
+      if (line) injections.push(line);
+    } catch {
+      // 统计失败就当没有这段，不打断生成
+    }
+  }
 
   // 继续：预设 continue_prefill 说"带上最后一条"，continue_postfix 是后缀（默认一个空格）
   const continueBase = presetOpts.continuePrefill === false ? '' : lastAssistantContent(history);

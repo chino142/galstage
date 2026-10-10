@@ -251,6 +251,15 @@ export const SETTINGS_SCHEMA = [
       + '注意：这跟"记忆 / 总结"不是一回事 —— 总结是另一层（小总结 / 大总结 / 结构化档案）+ 相关性召回。',
   },
   {
+    key: 'chat.bondContext',
+    type: 'boolean',
+    default: true,
+    group: '对话',
+    label: '羁绊提示',
+    help: '每轮给模型带一句"你和这个角色认识第几天 / 上次见面是什么时候 / 一共聊过多少条"，'
+      + '角色就不会每次都像第一次见面。只算这个角色说过的话，不花额外 token（就一句话）。',
+  },
+  {
     key: 'chat.contextBudget',
     type: 'number',
     minimum: 0,
@@ -602,6 +611,14 @@ export const SETTINGS_SCHEMA = [
     group: '数据',
     label: '自动备份保留份数',
     help: '超过这个数量的旧自动备份会被删掉，0 表示不清理。',
+  },
+  {
+    key: 'data.backupDir',
+    type: 'string',
+    default: '',
+    group: '数据',
+    label: '备份目录',
+    help: '留空 = 数据目录下的 backups\\。填一个同步盘（OneDrive / 坚果云 / Nextcloud）里的文件夹，就等于顺带做了异地备份；目录建不出来会自动退回默认。',
   },
   {
     key: 'system.updateUrl',

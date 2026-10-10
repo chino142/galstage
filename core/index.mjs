@@ -21,6 +21,8 @@ import { createVectorService } from './vectors/service.mjs';
 import { createFrontendService, THEME_TOKENS } from './frontend/service.mjs';
 import { createPlayingServices } from './chat/service.mjs';
 import { createToolboxServices } from './toolbox/service.mjs';
+import { createPlansService } from './plans/service.mjs';
+import { createCollectionsService } from './collections/service.mjs';
 
 export const ENGINE_VERSION = '0.6.0';
 
@@ -81,7 +83,11 @@ export function createEngine({ settings = {}, bus = appBus, ports = {} } = {}) {
   // 工具箱：ComfyUI 等。真正发请求 / 落盘的动作通过端口注入，core 只做判断。
   const toolbox = createToolboxServices({ settings: resolvedSettings, ports });
 
-  const services = { ...writing, ...playing, ...toolbox };
+  // 坑本：自己的存储 + 借写卡区的卡服务（"开演"就是拿设定建一张卡）。
+  const plans = createPlansService({ settings: resolvedSettings, ports: { ...ports, cards: writing.cards } });
+  const collections = createCollectionsService({ settings: resolvedSettings, ports });
+
+  const services = { ...writing, ...playing, ...toolbox, plans, collections };
 
   return {
     version: ENGINE_VERSION,

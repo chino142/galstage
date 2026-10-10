@@ -29,6 +29,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 
 import { ValidationError } from '../../core/errors.mjs';
+import { readSettings } from './settings.mjs';
 import { createZip, readZip } from '../toolbox/zip.mjs';
 
 const DATA_DIRS = ['assets', 'cards'];
@@ -80,11 +81,29 @@ function unsafeEntryName(name) {
 
 export function createBackupStore({ rawDb, repo, dataDir, logger = console, allowExecutableConfig = true }) {
   if (!dataDir) throw new ValidationError('备份需要数据目录');
-  const backupDir = path.join(dataDir, 'backups');
+  const defaultBackupDir = path.join(dataDir, 'backups');
+
+  /**
+   * 备份放哪儿：默认是 <数据目录>/backups；设置里 `data.backupDir` 填了就用它
+   * （填一个同步盘里的文件夹 == 顺带做了异地备份）。
+   * 目录建不出来就退回默认 —— 备份失败比"没放进同步盘"严重得多。
+   */
+  function backupDir() {
+    const custom = String(readSettings(repo)?.['data.backupDir'] ?? '').trim();
+    if (!custom) return defaultBackupDir;
+    try {
+      const resolved = path.resolve(custom);
+      mkdirSync(resolved, { recursive: true });
+      return resolved;
+    } catch {
+      return defaultBackupDir;
+    }
+  }
 
   function ensureDir() {
-    mkdirSync(backupDir, { recursive: true });
-    return backupDir;
+    const dir = backupDir();
+    mkdirSync(dir, { recursive: true });
+    return dir;
   }
 
   function dataStats() {
@@ -165,12 +184,12 @@ export function createBackupStore({ rawDb, repo, dataDir, logger = console, allo
   }
 
   function list() {
-    ensureDir();
+    const dir = ensureDir();
     const items = [];
-    for (const entry of readdirSync(backupDir)) {
+    for (const entry of readdirSync(dir)) {
       if (!entry.endsWith('.meta.json')) continue;
       try {
-        items.push(JSON.parse(readFileSync(path.join(backupDir, entry), 'utf8')));
+        items.push(JSON.parse(readFileSync(path.join(dir, entry), 'utf8')));
       } catch {
         // 元数据坏了就跳过，不影响别的备份
       }
@@ -181,7 +200,7 @@ export function createBackupStore({ rawDb, repo, dataDir, logger = console, allo
   function find(name) {
     const clean = String(name ?? '').replace(/[^A-Za-z0-9._-]/g, '');
     if (!clean) return null;
-    const zipPath = path.join(backupDir, clean.endsWith('.zip') ? clean : `${clean}.zip`);
+    const zipPath = path.join(ensureDir(), clean.endsWith('.zip') ? clean : `${clean}.zip`);
     if (!existsSync(zipPath)) return null;
     const metaPath = zipPath.replace(/\.zip$/, '.meta.json');
     let meta = null;

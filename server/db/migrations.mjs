@@ -7,7 +7,7 @@
  *   - 迁移记录写在 schema_migrations 里。
  */
 
-import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18 } from './schema.mjs';
+import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V20, SCHEMA_V21 } from './schema.mjs';
 
 export const MIGRATIONS = [
   {
@@ -99,6 +99,21 @@ export const MIGRATIONS = [
     version: 18,
     name: 'comfy-outfits',
     statements: SCHEMA_V18,
+  },
+  {
+    version: 19,
+    name: 'character-status',
+    statements: SCHEMA_V19,
+  },
+  {
+    version: 20,
+    name: 'story-plans',
+    statements: SCHEMA_V20,
+  },
+  {
+    version: 21,
+    name: 'card-collections',
+    statements: SCHEMA_V21,
   },
 ];
 

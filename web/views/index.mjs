@@ -28,6 +28,8 @@ import { createHostView } from './host.mjs';
 import { createAssetsView } from './assets.mjs';
 import { createStudioView } from './studio.mjs';
 import { createReviewView } from './review.mjs';
+import { createPlansView } from './plans.mjs';
+import { createCollectionsView } from './collections.mjs';
 
 export const VIEW_FACTORIES = {
   cards: createCardsView,
@@ -58,6 +60,8 @@ export const VIEW_FACTORIES = {
   assets: createAssetsView,
   studio: createStudioView,
   review: createReviewView,
+  plans: createPlansView,
+  collections: createCollectionsView,
 };
 
 export function createView(module, ctx) {

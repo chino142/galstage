@@ -13,7 +13,7 @@ import path from 'node:path';
 
 import { createHarness } from './harness.mjs';
 import { createMockComfy } from './fixtures/mock-comfy-server.mjs';
-import { readZip } from '../server/toolbox/zip.mjs';
+import { createZip, readZip } from '../server/toolbox/zip.mjs';
 import { startMultiUser, startTavern } from '../server/index.mjs';
 
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {}, setLevel() {} };
@@ -4817,6 +4817,38 @@ test('玩法补强接口：视觉 / 翻译 / 书签 / 动作 / Logit / 导出 / 
     assert.equal(thumbBytes.type, 'image/webp');
   } finally {
     await server.stop();
+  }
+});
+
+test('角色卡：拖一个 zip 卡包进去，里面的 PNG / JSON 一次性都进来', async () => {
+  // 自己起一个（这台共享服务到这儿已经被前面几个测试停掉了）
+  const zipDir = mkdtempSync(path.join(tmpdir(), 'tavern-zip-import-'));
+  const server = await startTavern({ port: 0, host: '127.0.0.1', dataDir: zipDir, logger: silentLogger });
+  const origin = `http://127.0.0.1:${server.address.port}`;
+  try {
+    const png = readFileSync(path.join(process.cwd(), 'tests', 'fixtures', 'card-amber.png'));
+    const jsonCard = Buffer.from(
+      JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', data: { name: '压缩包里的卡', description: '来自 zip' } }),
+      'utf8',
+    );
+    const zip = createZip([
+      { name: '卡包/', data: Buffer.alloc(0) },
+      { name: '卡包/card-amber.png', data: png },
+      { name: '卡包/一只猫.json', data: jsonCard },
+      { name: '__MACOSX/._junk.json', data: Buffer.from('{}') },
+      { name: 'readme.txt', data: Buffer.from('忽略我') },
+    ]);
+
+    const response = await fetch(`${origin}/api/characters/import?name=pack.zip&source=imported`, { method: 'POST', body: zip });
+    assert.equal(response.status, 201);
+    const body = await response.json();
+    assert.equal(body.imported, 2, `zip 里两张卡都要进来，实际：${JSON.stringify(body)}`);
+
+    const found = await (await fetch(`${origin}/api/characters?q=${encodeURIComponent('压缩包里的卡')}`)).json();
+    assert.ok(found.items.some((item) => item.name === '压缩包里的卡'), '压缩包里那张 JSON 卡要进库');
+  } finally {
+    await server.stop();
+    rmSync(zipDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 

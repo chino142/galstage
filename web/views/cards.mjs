@@ -40,7 +40,50 @@ export function createCardsView(module, ctx) {
   const statsHost = h('div', {});
 
   // mode：封面网格（默认，照 PotatoVN 那种一眼认得出）还是表格（批量管理方便）
-  const state = { q: '', tag: '', favorite: null, source: '', items: [], total: 0, tags: [], mode: 'grid' };
+  const state = { q: '', tag: '', favorite: null, source: '', status: '', items: [], total: 0, tags: [], mode: 'grid' };
+  // 剧本状态：跟 core/cards/service.mjs 的 CARD_STATUSES 保持一致（前端不引核心代码，这里抄一份）。
+  const CARD_STATUS_OPTIONS = [
+    { id: '', title: '未标记' },
+    { id: 'wish', title: '想玩' },
+    { id: 'playing', title: '在玩' },
+    { id: 'done', title: '已完结' },
+    { id: 'paused', title: '搁置' },
+  ];
+
+  /** 按剧本状态筛（'' = 全部）。 */
+  const statusFilter = h(
+    'select',
+    { class: 'chip-btn', title: '按剧本状态筛' },
+    [h('option', { value: '' }, '全部状态')],
+    CARD_STATUS_OPTIONS.filter((item) => item.id).map((item) => h('option', { value: item.id }, item.title)),
+  );
+  statusFilter.addEventListener('change', () => {
+    state.status = statusFilter.value;
+    void refresh();
+  });
+
+  /** 就地改一张卡的剧本状态。 */
+  async function setStatus(card, status) {
+    try {
+      await put(`/api/characters/${card.id}`, { status });
+      const label = CARD_STATUS_OPTIONS.find((item) => item.id === status)?.title ?? '';
+      toast(`《${card.name}》→ ${label}`);
+      await refresh();
+    } catch (err) {
+      toastError(err);
+    }
+  }
+
+  function statusSelect(card) {
+    const select = h(
+      'select',
+      { class: 'btn small', title: '剧本状态' },
+      CARD_STATUS_OPTIONS.map((item) => h('option', { value: item.id }, item.title)),
+    );
+    select.value = card.status ?? '';
+    select.addEventListener('change', () => void setStatus(card, select.value));
+    return select;
+  }
   try {
     const saved = localStorage.getItem('st.cardView');
     if (saved === 'grid' || saved === 'list') state.mode = saved;
@@ -48,7 +91,7 @@ export function createCardsView(module, ctx) {
   const fileInput = h('input', {
     type: 'file',
     multiple: true,
-    accept: '.png,.json,.txt,application/json,image/png',
+    accept: '.png,.json,.txt,.zip,application/json,image/png,application/zip',
     style: { display: 'none' },
     onchange: () => importFiles([...fileInput.files]),
   });
@@ -102,6 +145,7 @@ export function createCardsView(module, ctx) {
     h('button', { class: 'btn', onclick: () => folderInput.click() }, '📁 导入文件夹'),
     h('button', { class: 'btn', onclick: () => platformInput.click() }, '🎮 从平台作品导入'),
     h('button', { class: 'btn', onclick: () => newCardDialog() }, '＋ 新建'),
+    statusFilter,
     viewToggleBtn,
     h('button', {
       class: 'btn',
@@ -112,7 +156,7 @@ export function createCardsView(module, ctx) {
     }, '★ 只看收藏'),
   );
 
-  const dropZone = h('div', { class: 'drop-zone' }, '把 PNG / JSON 卡拖到这里导入');
+  const dropZone = h('div', { class: 'drop-zone' }, '把 PNG / JSON / ZIP 卡包拖到这里导入');
 
   el.append(
     panel(
@@ -371,6 +415,7 @@ export function createCardsView(module, ctx) {
       h(
         'div',
         { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
+        statusSelect(card),
         h('button', { class: 'btn small primary', onclick: () => startChat(card) }, '▶ 用这张卡开对话'),
         h(
           'button',
@@ -501,6 +546,7 @@ export function createCardsView(module, ctx) {
       h(
         'div',
         { class: 'card-grid-actions' },
+        statusSelect(card),
         h('button', { class: 'btn small primary', onclick: () => startChat(card) }, '▶ 开对话'),
         h(
           'button',
@@ -521,6 +567,7 @@ export function createCardsView(module, ctx) {
       if (state.tag) params.set('tag', state.tag);
       if (state.favorite !== null) params.set('favorite', String(state.favorite));
       if (state.source) params.set('source', state.source);
+      if (state.status) params.set('status', state.status);
       const data = await get(`/api/characters?${params.toString()}`);
       state.items = data.items;
       state.total = data.total;

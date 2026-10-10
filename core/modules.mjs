@@ -514,6 +514,23 @@ export const MODULES = [
     ],
   },
   {
+    id: 'tasks',
+    area: 'toolbox',
+    title: '任务中心',
+    summary: '后台在跑什么、上次跑成没：出图队列、备份导入记录、定时任务',
+    status: 'ready',
+    web: { view: 'tasks', icon: '📋' },
+    api: ['/api/tasks'],
+    dependsOn: ['comfyui', 'backup', 'scheduler'],
+    blueprint: '3.2',
+    plan: [
+      '出图队列：进度 / 失败原因，能取消、能重试',
+      '备份、恢复、清理、批量导入留一条记录（谁跑的、跑成没、耗时）',
+      '定时任务上次跑的结果也并在这儿看',
+      '清空已结束的记录，别让这张表一直长',
+    ],
+  },
+  {
     id: 'scheduler',
     area: 'toolbox',
     title: '定时任务',

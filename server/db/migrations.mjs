@@ -7,7 +7,7 @@
  *   - 迁移记录写在 schema_migrations 里。
  */
 
-import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V20, SCHEMA_V21 } from './schema.mjs';
+import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16, SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V20, SCHEMA_V21, SCHEMA_V22 } from './schema.mjs';
 
 export const MIGRATIONS = [
   {
@@ -114,6 +114,11 @@ export const MIGRATIONS = [
     version: 21,
     name: 'card-collections',
     statements: SCHEMA_V21,
+  },
+  {
+    version: 22,
+    name: 'background-tasks',
+    statements: SCHEMA_V22,
   },
 ];
 

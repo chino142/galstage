@@ -888,3 +888,27 @@ export const SCHEMA_V21 = [
 
   `CREATE INDEX IF NOT EXISTS idx_card_collection_items_char ON card_collection_items (character_id)`,
 ];
+
+/**
+ * V22：后台活儿的一次性记录（任务中心用）。
+ *
+ * 出图队列（comfy_runs）和定时任务（scheduler）本来就有自己的状态，不用再记一遍；
+ * 这里补的是"点一下就跑一次"的活儿：备份 / 恢复 / 清理 / 批量导入。
+ * 它们现在都是同步跑完的，所以记的是"从什么时候开始、跑完没、结果/失败原因"。
+ */
+export const SCHEMA_V22 = [
+  `CREATE TABLE IF NOT EXISTS tasks (
+     id TEXT PRIMARY KEY,
+     kind TEXT NOT NULL,
+     title TEXT NOT NULL,
+     status TEXT NOT NULL DEFAULT 'running',
+     detail TEXT,
+     error TEXT,
+     started_at TEXT NOT NULL,
+     finished_at TEXT,
+     created_at TEXT NOT NULL
+   )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks (created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)`,
+];

@@ -419,13 +419,25 @@ export function register(router, { engine, repo, comfyRunner, comfyLauncher = nu
 
   router.post('/api/maintenance/backup', async (ctx) => {
     const body = (await ctx.body()) ?? {};
-    return ctx.json(201, maintenance.createBackup({ label: body.label ?? null, kind: body.kind ?? 'manual' }));
+    return ctx.json(
+      201,
+      await engine.services.tasks.run(
+        { kind: 'backup', title: `一键备份${body.label ? `（${body.label}）` : ''}` },
+        () => maintenance.createBackup({ label: body.label ?? null, kind: body.kind ?? 'manual' }),
+      ),
+    );
   });
 
   router.post('/api/maintenance/restore', async (ctx) => {
     const body = (await ctx.body()) ?? {};
     if (!body.name) return ctx.fail(400, 'VALIDATION_ERROR', '要指定要恢复的备份（name）');
-    return ctx.json(200, maintenance.restoreBackup({ name: body.name }));
+    return ctx.json(
+      200,
+      await engine.services.tasks.run(
+        { kind: 'restore', title: `恢复备份 ${body.name}` },
+        () => maintenance.restoreBackup({ name: body.name }),
+      ),
+    );
   });
 
   router.delete('/api/maintenance/backups/:name', (ctx) => {
@@ -441,7 +453,13 @@ export function register(router, { engine, repo, comfyRunner, comfyLauncher = nu
 
   router.post('/api/maintenance/cleanup', async (ctx) => {
     const body = (await ctx.body()) ?? {};
-    return ctx.json(200, maintenance.cleanup({ targets: body.targets ?? null, backupFirst: body.backupFirst !== false }));
+    return ctx.json(
+      200,
+      await engine.services.tasks.run(
+        { kind: 'cleanup', title: '体检与清理' },
+        () => maintenance.cleanup({ targets: body.targets ?? null, backupFirst: body.backupFirst !== false }),
+      ),
+    );
   });
 
   /**

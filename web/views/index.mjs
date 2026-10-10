@@ -30,6 +30,7 @@ import { createStudioView } from './studio.mjs';
 import { createReviewView } from './review.mjs';
 import { createPlansView } from './plans.mjs';
 import { createCollectionsView } from './collections.mjs';
+import { createTasksView } from './tasks.mjs';
 
 export const VIEW_FACTORIES = {
   cards: createCardsView,
@@ -62,6 +63,7 @@ export const VIEW_FACTORIES = {
   review: createReviewView,
   plans: createPlansView,
   collections: createCollectionsView,
+  tasks: createTasksView,
 };
 
 export function createView(module, ctx) {

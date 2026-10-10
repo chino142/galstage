@@ -197,6 +197,8 @@ import { createPlansService, PLAN_STATUSES, normalizePlanStatus } from '../core/
 import { createCollectionsStore } from '../server/db/collections.mjs';
 import { createCollectionsService } from '../core/collections/service.mjs';
 import { collectCardFiles, expandCardZip, looksLikeZip } from '../server/cards/sources.mjs';
+import { createTasksStore } from '../server/db/tasks.mjs';
+import { createTasksService } from '../core/tasks/service.mjs';
 import { createMcpServer as createTavernMcpServer, MCP_RETURN_MODES } from '../core/mcp/server.mjs';
 import { createZip, readZip } from '../server/toolbox/zip.mjs';
 import { createBackupStore } from '../server/db/backup.mjs';
@@ -471,6 +473,7 @@ test('引擎：模块冻结、服务齐全、蓝图数据可用', () => {
     'prompts',
     'review',
     'state',
+    'tasks',
     'vectors',
     'worldbook',
   ]);
@@ -6499,6 +6502,61 @@ test('卡文件来源适配器：原始字节 / JSON 批量 / zip 卡包都归�
   const emptyZip = createZip([{ name: 'readme.txt', data: Buffer.from('空的') }]);
   assert.throws(() => expandCardZip('empty.zip', emptyZip), /没有 PNG \/ JSON 卡/);
   assert.throws(() => expandCardZip('bad.zip', Buffer.from('not a zip at all, really')), /打不开/);
+});
+
+test('任务中心：干过的活留下记录，失败的留原因，出图队列并进来一起看', async () => {
+  const { db, cleanup } = makeTempDb();
+  try {
+    assert.ok(db.repo.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tasks'"), 'tasks 表要建出来');
+    const store = createTasksStore({ repo: db.repo });
+    const fakeRuns = [
+      { id: 'r1', status: 'running', workflowName: '立绘', progress: 3, progressMax: 10, createdAt: '2026-10-10T00:00:00Z' },
+      { id: 'r2', status: 'error', workflowName: '背景', error: '连不上', createdAt: '2026-10-10T00:01:00Z' },
+    ];
+    const tasks = createTasksService({ ports: { tasksStore: store, comfyStore: { listRuns: () => fakeRuns } } });
+
+    // 成功的活：跑完留一条 done + 摘要
+    const saved = await tasks.run({ kind: 'backup', title: '一键备份' }, () => ({ name: 'tavern-1' }));
+    assert.equal(saved.name, 'tavern-1', '原来的返回值不能变');
+    const listed = tasks.list();
+    assert.equal(listed.tasks.length, 1);
+    assert.equal(listed.tasks[0].status, 'done');
+    assert.equal(listed.tasks[0].detail, '备份 tavern-1', '摘要要能看懂');
+    assert.equal(listed.tasks[0].finishedAt !== null, true);
+
+    // 失败的活：照旧抛出去，但记录里留下原因
+    await assert.rejects(
+      () => tasks.run({ kind: 'import', title: '导入角色卡' }, () => {
+        throw new Error('这张卡读不出来');
+      }),
+      /读不出来/,
+    );
+    const after = tasks.list();
+    assert.equal(after.tasks.length, 2);
+    assert.equal(after.tasks[0].status, 'error');
+    assert.equal(after.tasks[0].error, '这张卡读不出来');
+    assert.equal(after.failed, 1);
+    assert.equal(after.running, 0);
+
+    // 出图队列也并进来（本身不用再记一遍）
+    assert.equal(after.comfy.length, 2);
+    assert.equal(after.comfy[1].status, 'error');
+
+    // 在跑的记录不会被"清空已结束"带走
+    const runningTask = store.start({ kind: 'cleanup', title: '体检与清理' });
+    assert.equal(tasks.clear().removed, 2);
+    const left = tasks.list().tasks;
+    assert.equal(left.length, 1);
+    assert.equal(left[0].id, runningTask.id);
+
+    // 没接存储时照样能跑（只是不留记录）
+    const bare = createTasksService({ ports: {} });
+    assert.equal(await bare.run({}, () => 'ok'), 'ok');
+    assert.deepEqual(bare.list(), { tasks: [], comfy: [], running: 0, failed: 0 });
+    assert.deepEqual(bare.clear(), { removed: 0 });
+  } finally {
+    cleanup();
+  }
 });
 
 const result = await run();

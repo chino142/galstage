@@ -89,7 +89,10 @@ export function register(router, { engine, logger, assets }) {
     const files = await readCardFiles(ctx);
     // 批量导入是会一次性写很多行的破坏性操作（也可能覆盖同名卡），先留一份。
     if (files.length > 1) safeAutoBackup({ engine, logger, reason: '批量导入角色卡前', kind: 'pre-import' });
-    const result = await cards.importFiles(files, { source: ctx.query.source ?? 'imported' });
+    const result = await engine.services.tasks.run(
+      { kind: 'import', title: `导入角色卡（${files.length} 个文件）` },
+      () => cards.importFiles(files, { source: ctx.query.source ?? 'imported' }),
+    );
     return ctx.json(201, result);
   }, { bodyLimit: CARD_BODY_LIMIT });
 

@@ -4852,6 +4852,38 @@ test('角色卡：拖一个 zip 卡包进去，里面的 PNG / JSON 一次性都
   }
 });
 
+test('任务中心：备份跑完会在 /api/tasks 留下一条记录', async () => {
+  const taskDir = mkdtempSync(path.join(tmpdir(), 'tavern-tasks-'));
+  const server = await startTavern({ port: 0, host: '127.0.0.1', dataDir: taskDir, logger: silentLogger });
+  const origin = `http://127.0.0.1:${server.address.port}`;
+  try {
+    const before = await (await fetch(`${origin}/api/tasks`)).json();
+    assert.deepEqual(before.tasks, [], '一开始没有记录');
+    assert.ok(Array.isArray(before.scheduled), '定时任务那块也要有（哪怕是空的）');
+
+    const made = await fetch(`${origin}/api/maintenance/backup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: '任务中心验证' }),
+    });
+    assert.equal(made.status, 201);
+
+    const after = await (await fetch(`${origin}/api/tasks`)).json();
+    assert.equal(after.tasks.length, 1, `备份该留一条记录，实际：${JSON.stringify(after.tasks)}`);
+    assert.equal(after.tasks[0].kind, 'backup');
+    assert.equal(after.tasks[0].status, 'done');
+    assert.match(after.tasks[0].title, /任务中心验证/);
+    assert.ok(after.tasks[0].finishedAt, '要有结束时间');
+
+    const cleared = await (await fetch(`${origin}/api/tasks/clear`, { method: 'POST' })).json();
+    assert.equal(cleared.removed, 1);
+    assert.equal((await (await fetch(`${origin}/api/tasks`)).json()).tasks.length, 0);
+  } finally {
+    await server.stop();
+    rmSync(taskDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
 const result = await run();
 if (tavern.server.listening) await tavern.stop();
 if (multiUser) {

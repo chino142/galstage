@@ -64,3 +64,13 @@ Because this project contains (and will contain) code derived from an AGPL-3.0
 work, the project as a whole is licensed under AGPL-3.0. If you run it as a
 network service — for example hosting it so friends can connect — section 13
 obliges you to offer those users the corresponding source code.
+
+## Skerry — https://github.com/ChaoxiYu9/Skerry （参考，无代码移植）
+
+`core/toolbox/review.mjs`（月度与年度报告）的**组织方式** —— 按年 / 月 / 全部取区间、
+活跃天数、最长连续天数、峰值日、Top 榜、按天 / 按月分桶 —— 参考了 Skerry 的
+`src/pages/AnnualReport/reportData.ts`。Skerry 以 AGPL-3.0 授权，与本项目整体许可一致。
+
+这里只借鉴它的做法与数据形状，代码是按本项目口径另写的：统计对象是 AI 角色扮演
+（轮数 / token / 花费 / 陪伴 / 写卡 / 出图），不是游玩时长；SQL 聚合与页面分别在本项目
+自己的 `server/db/review.mjs`、`web/views/review.mjs` 里，没有搬运 Skerry 的源码。

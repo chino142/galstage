@@ -189,6 +189,8 @@ import { createComfyLauncher, comfyLaunchSpec, parseLaunchArgs } from '../server
 import { createComfyRunner } from '../server/toolbox/runner.mjs';
 import { cacheSavings, estimationDelta, fillDays, normaliseUsage, PRICE_PRESETS } from '../core/toolbox/cost.mjs';
 import { createCostStore } from '../server/db/cost.mjs';
+import { buildReport, longestStreak, normalisePeriod } from '../core/toolbox/review.mjs';
+import { createReviewStore } from '../server/db/review.mjs';
 import { createMcpServer as createTavernMcpServer, MCP_RETURN_MODES } from '../core/mcp/server.mjs';
 import { createZip, readZip } from '../server/toolbox/zip.mjs';
 import { createBackupStore } from '../server/db/backup.mjs';
@@ -459,6 +461,7 @@ test('引擎：模块冻结、服务齐全、蓝图数据可用', () => {
     'memory',
     'narration',
     'prompts',
+    'review',
     'state',
     'vectors',
     'worldbook',
@@ -3374,6 +3377,97 @@ test('工具箱：花费记账 —— 按对话 / 角色 / 天汇总，预估与
     assert.equal(cost.removePricing(pricing.id), true);
     assert.equal(cost.listPricing().items.length, 1);
     assert.equal(store.stats().turns, 3);
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------- 工具箱 3.2 月度 / 年度报告
+
+test('月度与年度报告：区间边界、连续天数、聚合与总结', () => {
+  const now = new Date('2026-10-15T12:00:00+08:00');
+  const month = normalisePeriod('month', null, now);
+  assert.equal(month.period, '2026-10');
+  assert.equal(month.from, new Date(2026, 9, 1, 0, 0, 0, 0).toISOString());
+  assert.equal(month.to, new Date(2026, 10, 1, 0, 0, 0, 0).toISOString());
+  assert.equal(normalisePeriod('year', '2025', now).from, new Date(2025, 0, 1).toISOString());
+  assert.equal(normalisePeriod('all', 'whatever', now).from, null);
+  // 12 月的下界要跨年
+  assert.equal(normalisePeriod('month', '2026-12', now).to, new Date(2027, 0, 1).toISOString());
+
+  assert.equal(longestStreak(['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-05']), 3);
+  assert.equal(longestStreak([]), 0);
+
+  const report = buildReport(
+    {
+      usage: {
+        totals: { turns: 4, promptTokens: 100, completionTokens: 50, totalTokens: 150, cachedTokens: 20, cost: 0.03, cacheSavings: 0.005, reportedTurns: 4, unpricedTurns: 0 },
+        byCharacter: [
+          { characterId: 'c1', name: '阿狸', turns: 3, tokens: 120, cost: 0.02 },
+          { characterId: null, name: null, turns: 1, tokens: 30, cost: 0.01 },
+        ],
+        byModel: [{ model: 'm', turns: 4, tokens: 150, cost: 0.03 }],
+        byDay: [
+          { date: '2026-10-01', turns: 2, tokens: 100, cost: 0.02 },
+          { date: '2026-10-02', turns: 2, tokens: 50, cost: 0.01 },
+        ],
+      },
+      activity: {
+        totals: { messages: 6, userWords: 30, assistantWords: 90, longestMessage: 40 },
+        byDay: [
+          { date: '2026-10-01', messages: 4, userWords: 20, assistantWords: 60 },
+          { date: '2026-10-02', messages: 2, userWords: 10, assistantWords: 30 },
+        ],
+        byHour: [{ hour: 0, messages: 1 }, { hour: 1, messages: 2 }, { hour: 20, messages: 3 }],
+        byWeekday: [{ weekday: 4, messages: 6 }],
+      },
+      chats: { fresh: 2, branches: 1 },
+      creation: { cardsCreated: 1, cardsEdited: 2, cardVersions: 3, worldbooks: 1, presets: 0, memories: 1 },
+      images: { done: 5, error: 1, active: 0 },
+      charactersPlayed: 2,
+    },
+    month,
+  );
+  assert.equal(report.headline.turns, 4);
+  assert.equal(report.headline.words, 120);
+  assert.equal(report.headline.longestStreak, 2);
+  assert.equal(report.usage.topCharacters[0].name, '阿狸');
+  assert.equal(report.usage.topCharacters[1].name, '（未归属）');
+  assert.equal(report.activity.peak.date, '2026-10-01');
+  assert.equal(report.activity.nightMessages, 3);
+  assert.equal(report.images.done, 5);
+  assert.equal(report.activity.byDay.length, 31); // 十月 31 天，缺的日子补 0
+  assert.ok(report.commentary.length >= 3);
+
+  const annual = buildReport({ activity: { byDay: [{ date: '2026-03-02', messages: 5 }] } }, normalisePeriod('year', '2026', now));
+  assert.equal(annual.activity.byDay.length, 12); // 年报按月，12 根
+  assert.equal(annual.activity.byDay[2].messages, 5);
+});
+
+test('月度与年度报告：存储聚合（真 SQLite + 本地时区切分）', () => {
+  const { db, cleanup } = makeTempDb();
+  try {
+    const repo = db.repo;
+    const iso = (value) => new Date(value).toISOString();
+    repo.run('INSERT INTO characters (id, name, spec_version, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', ['c1', '阿狸', 'v2', '{}', iso('2026-10-02T03:00:00Z'), iso('2026-10-02T03:00:00Z')]);
+    repo.run('INSERT INTO chats (id, title, character_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', ['ch1', '夜谈', 'c1', iso('2026-10-02T03:00:00Z'), iso('2026-10-02T03:00:00Z')]);
+    repo.run('INSERT INTO chat_messages (id, chat_id, seq, role, character_id, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', ['m1', 'ch1', 1, 'user', null, '你好', iso('2026-10-02T03:00:00Z')]);
+    repo.run('INSERT INTO chat_messages (id, chat_id, seq, role, character_id, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', ['m2', 'ch1', 2, 'assistant', 'c1', '你好呀', iso('2026-10-02T03:00:00Z')]);
+    repo.run('INSERT INTO usage_log (id, chat_id, character_id, model, total_tokens, prompt_tokens, cost, reported, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', ['u1', 'ch1', 'c1', 'm', 100, 60, 0.01, 1, iso('2026-10-02T03:00:00Z')]);
+    repo.run('INSERT INTO comfy_runs (id, status, created_at, updated_at) VALUES (?, ?, ?, ?)', ['r1', 'done', iso('2026-10-02T03:00:00Z'), iso('2026-10-02T03:00:00Z')]);
+
+    const { review } = createToolboxServices({ ports: { reviewStore: createReviewStore({ repo }) } });
+    const periods = review.periods();
+    assert.equal(periods.scopes.length, 3);
+    assert.ok(periods.months.includes('2026-10'));
+    const report = review.report({ scope: 'month', period: '2026-10' });
+    assert.equal(report.headline.turns, 1);
+    assert.equal(report.headline.tokens, 100);
+    assert.equal(report.headline.messages, 2);
+    assert.equal(report.headline.cardsPlayed, 1);
+    assert.equal(report.headline.cardsCreated, 1);
+    assert.equal(report.usage.topCharacters[0].name, '阿狸');
+    assert.equal(report.images.done, 1);
   } finally {
     cleanup();
   }

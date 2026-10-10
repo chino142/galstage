@@ -34,6 +34,7 @@ import { createComfyStore } from './db/comfy.mjs';
 import { createAssetStore } from './db/assets.mjs';
 import { createComfyLauncher } from './toolbox/comfy-launcher.mjs';
 import { createCostStore } from './db/cost.mjs';
+import { createReviewStore } from './db/review.mjs';
 import { createComfyRunner } from './toolbox/runner.mjs';
 import { createBackupStore } from './db/backup.mjs';
 import { createMaintenanceStore } from './db/maintenance.mjs';
@@ -81,6 +82,7 @@ export function createRuntime({ dataDir, logger: providedLogger = null, withComf
   const comfyStore = createComfyStore({ repo: db.repo });
   const assetStore = createAssetStore({ repo: db.repo, dataDir });
   const costStore = createCostStore({ repo: db.repo });
+  const reviewStore = createReviewStore({ repo: db.repo });
   // allowExecutableConfig：只有能执行 launcher 的运行时（单机 / 管理员）才允许把
   // 备份里的 providers.launcher、mcp_servers 原样恢复回去；成员租户恢复时把它们剥掉，
   // 否则成员能靠"导一份改过的备份"把启动命令塞进自己的数据目录，等这个目录被以启用
@@ -152,6 +154,7 @@ export function createRuntime({ dataDir, logger: providedLogger = null, withComf
     comfyRunner,
     assetStore,
     costStore,
+    reviewStore,
     backupStore,
     maintenanceStore,
     frontendStore,
@@ -246,7 +249,7 @@ export function createRuntime({ dataDir, logger: providedLogger = null, withComf
 
   const engine = createEngine({ settings, ports });
 
-  const stores = { chatStore, cardStore, worldbookStore, promptStore, vectorStore, memoryStore, referenceStore, comfyStore, assetStore, costStore, backupStore, maintenanceStore, frontendStore, repo: db.repo };
+  const stores = { chatStore, cardStore, worldbookStore, promptStore, vectorStore, memoryStore, referenceStore, comfyStore, assetStore, costStore, reviewStore, backupStore, maintenanceStore, frontendStore, repo: db.repo };
 
   // 定时任务（蓝图 3.2）：只有 HTTP 入口需要它，MCP stdio 进程不跑后台备份。
   const scheduler = withComfy
@@ -284,6 +287,7 @@ export function createRuntime({ dataDir, logger: providedLogger = null, withComf
     comfyStore,
     assetStore,
     costStore,
+    reviewStore,
     backupStore,
     maintenanceStore,
     frontendStore,

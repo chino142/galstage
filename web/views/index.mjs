@@ -27,6 +27,7 @@ import { createGalgameFrontendView } from './galgame-frontend.mjs';
 import { createHostView } from './host.mjs';
 import { createAssetsView } from './assets.mjs';
 import { createStudioView } from './studio.mjs';
+import { createReviewView } from './review.mjs';
 
 export const VIEW_FACTORIES = {
   cards: createCardsView,
@@ -56,6 +57,7 @@ export const VIEW_FACTORIES = {
   host: createHostView,
   assets: createAssetsView,
   studio: createStudioView,
+  review: createReviewView,
 };
 
 export function createView(module, ctx) {

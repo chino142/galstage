@@ -51,6 +51,7 @@ import {
   workflowInputs,
 } from './comfy.mjs';
 import { PRICE_PRESETS, cacheSavings, describeTotals, fillDays, normaliseUsage } from './cost.mjs';
+import { REVIEW_SCOPES, buildReport, normalisePeriod } from './review.mjs';
 import { applyPromptKit, describePromptKit } from './prompt-kit.mjs';
 import { computeCost } from '../chat/tokens.mjs';
 import { BACKUP_KINDS, CLEANUP_TARGETS, defaultCleanupTargets, describeBackups, describeStats, formatBytes } from './maintenance.mjs';
@@ -1240,6 +1241,59 @@ export function createMaintenanceService(ctx) {
   return { listBackups, createBackup, restoreBackup, removeBackup, autoBackup, stats, scan, cleanup, targets: () => CLEANUP_TARGETS, describeBackups, formatBytes };
 }
 
+/**
+ * 月度与年度报告（蓝图 3.2 加页）。
+ *
+ * 数据全在已有表里（usage_log / chat_messages / characters / character_versions /
+ * comfy_runs / …），这里只负责"选区间 → 让存储层做聚合 → 交给纯函数算成报告"。
+ * 不花 token：报告里的"一句话总结"是本地拼的（要 AI 写以后另说）。
+ */
+export function createReviewService(ctx) {
+  const store = () => ctx.ports.reviewStore ?? null;
+
+  function periods() {
+    const found = store();
+    const base = found ? found.availablePeriods() : { months: [], years: [] };
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return {
+      scopes: REVIEW_SCOPES,
+      months: base.months,
+      years: base.years,
+      currentMonth,
+      currentYear: String(now.getFullYear()),
+    };
+  }
+
+  function report(query = {}) {
+    const meta = normalisePeriod(query.scope, query.period);
+    const found = store();
+    if (!found) return buildReport({}, meta);
+    const range = { from: meta.from, to: meta.to };
+    const raw = {
+      usage: {
+        totals: found.usageTotals(range),
+        byCharacter: found.usageByCharacter(range),
+        byModel: found.usageByModel(range),
+        byDay: found.usageByDay(range),
+      },
+      activity: {
+        totals: found.activityTotals(range),
+        byDay: found.activityByDay(range),
+        byHour: found.activityByHour(range),
+        byWeekday: found.activityByWeekday(range),
+      },
+      chats: found.chatsCreated(range),
+      creation: found.creationTotals(range),
+      images: { ...found.imagesByStatus(range), gallery: found.galleryAssets(range) },
+      charactersPlayed: found.charactersPlayed(range),
+    };
+    return buildReport(raw, meta);
+  }
+
+  return { periods, report, scopes: () => REVIEW_SCOPES };
+}
+
 /** 组装工具箱的各个服务。 */
 export function createToolboxServices({ settings = {}, ports = {} } = {}) {
   const ctx = { settings, ports };
@@ -1247,6 +1301,7 @@ export function createToolboxServices({ settings = {}, ports = {} } = {}) {
     comfy: createComfyService(ctx),
     cost: createCostService(ctx),
     maintenance: createMaintenanceService(ctx),
+    review: createReviewService(ctx),
   };
 }
 

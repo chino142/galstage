@@ -2931,3 +2931,68 @@ body.resizing .nav-resizer { opacity: 0.85; background: var(--st-accent); }
   .bind-row { grid-template-columns: 1fr; }
 }
 
+/* ---------------- 月度 / 年度报告 ---------------- */
+
+/* 顶部：左边一张"本月最爱"卡（带封面），右边一排小指标。窄屏自动摞起来。 */
+.review-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.review-featured {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius);
+  background: linear-gradient(120deg, rgba(232, 160, 191, 0.12), rgba(127, 179, 240, 0.06));
+}
+
+.review-featured-cover {
+  width: 88px;
+  aspect-ratio: 2 / 3;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--st-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.review-featured-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.review-featured-cover.placeholder { display: grid; place-content: center; font-size: 22px; color: var(--st-hint); }
+
+.review-featured-info { min-width: 0; display: grid; align-content: center; gap: 4px; }
+.review-featured-kicker { font-size: 11.5px; color: var(--st-hint); }
+.review-featured-name { font-weight: 700; font-size: 15px; color: var(--st-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-featured-value { font-size: 13px; color: var(--st-text); }
+
+.review-progress { height: 6px; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.55); border: 1px solid var(--st-border); }
+.review-progress > i { display: block; height: 100%; background: linear-gradient(90deg, var(--st-accent), var(--st-accent-2)); }
+
+.review-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; align-content: stretch; }
+
+.review-metric {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 12px 14px;
+  border: 1px solid var(--st-border);
+  border-radius: var(--st-radius);
+  background: var(--st-surface-soft);
+}
+
+.review-metric-icon { font-size: 20px; line-height: 1; }
+.review-metric-body { min-width: 0; }
+.review-metric-value { font-size: 20px; font-weight: 700; color: var(--st-title); line-height: 1.15; }
+.review-metric-label { font-size: 11.5px; color: var(--st-hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 720px) {
+  .review-hero { grid-template-columns: 1fr; }
+}
+

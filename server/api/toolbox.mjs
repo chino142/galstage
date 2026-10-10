@@ -400,6 +400,17 @@ export function register(router, { engine, repo, comfyRunner, comfyLauncher = nu
     return ctx.noContent();
   });
 
+  // ------------------------------------------------------------------ 月度 / 年度报告
+  const review = engine.services.review;
+
+  /** 可选区间：有过数据的月份 / 年份，外加"现在"。 */
+  router.get('/api/review/periods', (ctx) => ctx.json(200, review.periods()));
+
+  /** 一份报告：scope = month | year | all，period = 'YYYY-MM' | 'YYYY'（all 时忽略）。 */
+  router.get('/api/review/report', (ctx) =>
+    ctx.json(200, review.report({ scope: ctx.query.scope ?? 'month', period: ctx.query.period ?? null })),
+  );
+
   // ------------------------------------------------------------------ 备份与维护
 
   const maintenance = engine.services.maintenance;

@@ -2833,6 +2833,41 @@ test('工具箱：用量落库、按对话 / 角色 / 天汇总、能填各家�
   await call(`/api/chats/${chatId}`, { method: 'DELETE' });
 });
 
+test('工具箱：月度 / 年度报告把用量聚合成机器可读的数字', async () => {
+  const periods = await call('/api/review/periods');
+  assert.equal(periods.status, 200);
+  assert.deepEqual(periods.body.scopes, ['month', 'year', 'all']);
+  assert.ok(periods.body.currentMonth, '要给出"现在"这一个月');
+
+  // 现造一轮：绑假模型 → 建对话 → 发一条（聊天会记账）
+  const providers = await call('/api/providers');
+  const provider = providers.body.items.find((item) => item.label === '本地假模型');
+  await call('/api/models/bindings', { method: 'PUT', body: { scope: 'default', providerId: provider.id, model: 'mock-small' } });
+  const created = await call('/api/chats', { method: 'POST', body: { title: '报告', character: { name: '报卡', first_mes: '你好。' }, persona: { name: '我' } } });
+  const chatId = created.body.id;
+  await streamCall(`/api/chats/${chatId}/send`, { text: '聊一句' });
+
+  const report = await call('/api/review/report?scope=month');
+  assert.equal(report.status, 200);
+  assert.equal(report.body.meta.scope, 'month');
+  assert.ok(report.body.headline.turns >= 1, '这一轮要算进报告');
+  assert.ok(report.body.headline.tokens >= 1);
+  assert.ok(report.body.usage.topCharacters.length >= 1, '要按卡分组');
+  assert.ok(report.body.usage.topCharacters[0].turns >= 1);
+  assert.ok(report.body.usage.byModel.some((row) => row.model === 'mock-small'));
+  assert.ok(report.body.activity.byDay.length >= 28, '月报按天补满整月');
+  assert.equal(report.body.activity.byHour.length, 24);
+  assert.equal(report.body.activity.byWeekday.length, 7);
+  assert.ok(report.body.creation && typeof report.body.creation.cardsCreated === 'number');
+  assert.ok(Array.isArray(report.body.commentary) && report.body.commentary.length >= 1);
+
+  const all = await call('/api/review/report?scope=all');
+  assert.equal(all.body.meta.scope, 'all');
+  assert.ok(all.body.headline.turns >= report.body.headline.turns, '全部时间的轮数不该少于这个月');
+
+  await call(`/api/chats/${chatId}`, { method: 'DELETE' });
+});
+
 test('工具箱：把酒馆当 MCP 服务器 —— Codex / Claude Code 能直接读写', async () => {
   const info = await call('/api/mcp/server');
   assert.equal(info.status, 200);

@@ -196,6 +196,7 @@ import { createPlansStore } from '../server/db/plans.mjs';
 import { createPlansService, PLAN_STATUSES, normalizePlanStatus } from '../core/plans/service.mjs';
 import { createCollectionsStore } from '../server/db/collections.mjs';
 import { createCollectionsService } from '../core/collections/service.mjs';
+import { collectCardFiles, expandCardZip, looksLikeZip } from '../server/cards/sources.mjs';
 import { createMcpServer as createTavernMcpServer, MCP_RETURN_MODES } from '../core/mcp/server.mjs';
 import { createZip, readZip } from '../server/toolbox/zip.mjs';
 import { createBackupStore } from '../server/db/backup.mjs';
@@ -6461,6 +6462,43 @@ test('剧本合集：两级分类、一张卡能进多个分类、删分组不�
   } finally {
     cleanup();
   }
+});
+
+test('卡文件来源适配器：原始字节 / JSON 批量 / zip 卡包都归一成一份列表', () => {
+  const png = readFileSync(path.join(process.cwd(), 'tests', 'fixtures', 'card-amber.png'));
+  const jsonCard = Buffer.from(JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', data: { name: '夹带卡' } }), 'utf8');
+
+  // 原始字节：一张就是一份
+  const single = collectCardFiles({ raw: png, name: 'amber.png' });
+  assert.equal(single.length, 1);
+  assert.equal(single[0].name, 'amber.png');
+  assert.equal(single[0].buffer.length, png.length);
+  assert.equal(looksLikeZip(png), false);
+
+  // JSON 批量：base64 那一路
+  const batch = collectCardFiles({ json: { files: [{ name: 'a.json', dataBase64: jsonCard.toString('base64') }] } });
+  assert.equal(batch.length, 1);
+  assert.equal(batch[0].name, 'a.json');
+  assert.throws(() => collectCardFiles({ json: { files: [] } }), /files 为空/);
+  assert.throws(() => collectCardFiles({ json: { files: [{ name: 'x.json' }] } }), /没有内容/);
+  assert.throws(() => collectCardFiles({ raw: Buffer.alloc(0) }), /空的/);
+
+  // zip 卡包：只挑卡、跳垃圾、取 basename
+  const zip = createZip([
+    { name: '卡包/', data: Buffer.alloc(0) },
+    { name: '卡包/amber.png', data: png },
+    { name: '卡包/深一层/夹带.json', data: jsonCard },
+    { name: '__MACOSX/._x.json', data: Buffer.from('{}') },
+    { name: 'readme.txt', data: Buffer.from('不要我') },
+  ]);
+  assert.equal(looksLikeZip(zip), true);
+  const fromZip = collectCardFiles({ raw: zip, name: 'pack.zip' });
+  assert.deepEqual(fromZip.map((item) => item.name).sort(), ['amber.png', '夹带.json']);
+
+  // zip 里没有卡要说人话
+  const emptyZip = createZip([{ name: 'readme.txt', data: Buffer.from('空的') }]);
+  assert.throws(() => expandCardZip('empty.zip', emptyZip), /没有 PNG \/ JSON 卡/);
+  assert.throws(() => expandCardZip('bad.zip', Buffer.from('not a zip at all, really')), /打不开/);
 });
 
 const result = await run();

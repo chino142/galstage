@@ -189,9 +189,66 @@ export function createCardsView(module, ctx) {
     });
   }
 
+  /**
+   * 导入结果表：成功 / 失败各列一张，重名的单独标出来。
+   * 以前只有一句 toast + console.warn，导 50 张卡时根本看不出哪张没进来。
+   */
+  function showImportReport(result, existingNames) {
+    const imported = result.items ?? [];
+    const errors = result.errors ?? [];
+    const dupes = imported.filter((item) => existingNames.has(item.name));
+    openModal({
+      title: '导入结果',
+      width: '560px',
+      body: h(
+        'div',
+        { style: { display: 'grid', gap: '12px' } },
+        h(
+          'div',
+          { class: 'chip-row' },
+          h('span', { class: 'chip ready' }, `成功 ${result.imported ?? imported.length} 张`),
+          errors.length ? h('span', { class: 'chip error' }, `失败 ${errors.length} 个`) : null,
+          dupes.length ? h('span', { class: 'chip partial' }, `同名 ${dupes.length} 张`) : null,
+        ),
+        imported.length
+          ? h(
+              'div',
+              {},
+              h('div', { class: 'panel-note', style: { marginBottom: '6px' } }, '成功'),
+              table(
+                ['卡名', '规格', '备注'],
+                imported.map((item) => [
+                  item.name ?? '（无名）',
+                  String(item.specVersion ?? '').toUpperCase(),
+                  existingNames.has(item.name) ? '和库里已有的重名' : '',
+                ]),
+              ),
+            )
+          : null,
+        errors.length
+          ? h(
+              'div',
+              {},
+              h('div', { class: 'panel-note', style: { marginBottom: '6px' } }, '失败'),
+              table(['文件', '原因'], errors.map((err) => [err.name ?? '（无名）', err.message ?? ''])),
+            )
+          : null,
+      ),
+      actions: [{ label: '知道了', primary: true }],
+    });
+  }
+
   async function importFiles(files) {
     if (!files.length) return;
     try {
+      // 先记下库里已有的卡名，导入完把"同名"标出来（导入是允许重名的，只是提醒一下）
+      let existingNames = new Set();
+      try {
+        const before = await get('/api/characters?limit=1000');
+        existingNames = new Set((before.items ?? []).map((item) => item.name));
+      } catch {
+        // 拿不到就算了，不影响导入
+      }
       const payload = [];
       for (const file of files) {
         payload.push({ name: file.name, dataBase64: await fileToBase64(file) });
@@ -202,7 +259,7 @@ export function createCardsView(module, ctx) {
       } else {
         toast(`导入成功：${result.imported} 张`);
       }
-      for (const err of result.errors ?? []) console.warn('导入失败', err.name, err.message);
+      showImportReport(result, existingNames);
       await refresh();
     } catch (err) {
       toastError(err);
@@ -451,18 +508,129 @@ export function createCardsView(module, ctx) {
           // 先把文件读完再拆 input —— 先 remove 的话 Chrome 会把读取打断
           // （真用户从磁盘挑一张几 MB 的图也会踩这个坑）
           const base64 = await fileToBase64(file);
-          await put(`/api/characters/${card.id}`, { avatar: base64 });
-          toast(`《${card.name}》的封面换好了`);
-          await refresh();
+          input.remove();
+          openCoverCropper(card, base64, file.type || 'image/png');
         } catch (err) {
           toastError(err);
-        } finally {
           input.remove();
         }
       },
     });
     document.body.append(input);
     input.click();
+  }
+
+  /**
+   * 3:4 裁剪框：拖动选位置、滑块缩放，确认后导出 PNG 存回卡里。
+   * 为什么要裁：竖版封面是 3:4，横图直接塞进去会把脸切掉 —— 让人自己挑焦点。
+   */
+  function openCoverCropper(card, base64, mime) {
+    const BOX_W = 240;
+    const BOX_H = 320; // 3:4
+    const OUT_W = 600;
+    const OUT_H = 800;
+    const image = new Image();
+    const preview = h('img', { style: { position: 'absolute', left: '0px', top: '0px', userSelect: 'none', pointerEvents: 'none' } });
+    const frame = h(
+      'div',
+      { style: { position: 'relative', width: `${BOX_W}px`, height: `${BOX_H}px`, overflow: 'hidden', borderRadius: '10px', border: '1px solid var(--st-border)', background: 'rgba(255,255,255,.5)', cursor: 'grab', touchAction: 'none' } },
+      preview,
+    );
+    const zoom = h('input', { type: 'range', min: '1', max: '3', step: '0.02', value: '1' });
+    let coverScale = 1;
+    let zoomFactor = 1;
+    let ox = 0;
+    let oy = 0;
+    let drag = null;
+
+    const modal = openModal({
+      title: `给《${card.name}》挑封面`,
+      width: '420px',
+      body: h(
+        'div',
+        { style: { display: 'grid', gap: '12px', justifyItems: 'center' } },
+        frame,
+        h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', width: '100%' } }, h('span', { class: 'panel-note' }, '缩放'), zoom),
+        h('div', { class: 'panel-note' }, '拖一下选位置，缩放调大小；最后存的是一张 600×800 的 PNG。'),
+      ),
+      actions: [
+        { label: '取消' },
+        { label: '不裁，用原图', onClick: async () => (await save(base64)) && modal.close() && false },
+        { label: '就用这块', primary: true, onClick: async () => (await save(cropToBase64())) && modal.close() && false },
+      ],
+    });
+
+    function layout() {
+      if (!image.naturalWidth) return;
+      const shownW = image.naturalWidth * coverScale * zoomFactor;
+      const shownH = image.naturalHeight * coverScale * zoomFactor;
+      ox = Math.min(0, Math.max(BOX_W - shownW, ox));
+      oy = Math.min(0, Math.max(BOX_H - shownH, oy));
+      Object.assign(preview.style, { width: `${shownW}px`, height: `${shownH}px`, left: `${ox}px`, top: `${oy}px` });
+    }
+
+    /** 把当前取景画进 600×800 的画布，导出 base64（去掉 dataURL 前缀）。 */
+    function cropToBase64() {
+      if (!image.naturalWidth) return '';
+      const canvas = document.createElement('canvas');
+      canvas.width = OUT_W;
+      canvas.height = OUT_H;
+      const context = canvas.getContext('2d');
+      const k = OUT_W / BOX_W;
+      const shownW = image.naturalWidth * coverScale * zoomFactor * k;
+      const shownH = image.naturalHeight * coverScale * zoomFactor * k;
+      context.drawImage(image, ox * k, oy * k, shownW, shownH);
+      return canvas.toDataURL('image/png').split(',')[1] ?? '';
+    }
+
+    async function save(pngBase64) {
+      if (!pngBase64) {
+        toast('这张图还没读好，稍等一下', { tone: 'warn' });
+        return false;
+      }
+      try {
+        await put(`/api/characters/${card.id}`, { avatar: pngBase64 });
+        toast(`《${card.name}》的封面换好了`);
+        await refresh();
+        return true;
+      } catch (err) {
+        toastError(err);
+        return false;
+      }
+    }
+
+    zoom.addEventListener('input', () => {
+      zoomFactor = Number(zoom.value) || 1;
+      layout();
+    });
+    frame.addEventListener('pointerdown', (event) => {
+      drag = { x: event.clientX, y: event.clientY, ox, oy };
+      frame.style.cursor = 'grabbing';
+      frame.setPointerCapture?.(event.pointerId);
+    });
+    frame.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      ox = drag.ox + (event.clientX - drag.x);
+      oy = drag.oy + (event.clientY - drag.y);
+      layout();
+    });
+    const endDrag = () => {
+      drag = null;
+      frame.style.cursor = 'grab';
+    };
+    frame.addEventListener('pointerup', endDrag);
+    frame.addEventListener('pointercancel', endDrag);
+
+    image.onload = () => {
+      coverScale = Math.max(BOX_W / image.naturalWidth, BOX_H / image.naturalHeight);
+      // 居中：初始把图摆到中间，四周留均匀的余量
+      ox = (BOX_W - image.naturalWidth * coverScale) / 2;
+      oy = (BOX_H - image.naturalHeight * coverScale) / 2;
+      preview.src = image.src;
+      layout();
+    };
+    image.onerror = () => toast('这张图读不出来，换一张试试', { tone: 'warn' });
+    image.src = `data:${mime};base64,${base64}`;
   }
 
   /**

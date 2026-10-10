@@ -173,7 +173,8 @@ export function createCardEditorView(module, ctx) {
         nodes.length ? nodes : emptyState({ icon: '🌾', title: '这个分组没有可编辑的字段' }),
         h('div', { style: { display: 'flex', gap: '8px', marginTop: '6px' } },
           h('button', { class: 'btn primary', onclick: () => save() }, '保存这一版'),
-          h('button', { class: 'btn', onclick: () => showVersions() }, '版本历史')),
+          h('button', { class: 'btn', onclick: () => showVersions() }, '版本历史'),
+          h('button', { class: 'btn', onclick: () => void showSettingSources() }, '设定来源')),
       ),
       createCardExtrasPanel(card),
       chats.el,
@@ -181,6 +182,72 @@ export function createCardEditorView(module, ctx) {
   }
 
   // ---------------------------------------------------------------- 动作
+
+  /**
+   * 多来源设定：把「现在这份 / 历史版本里的 / 卡内世界书条目」摆在一起预览，挑一份填进描述框。
+   * 只改界面不落库 —— 填完你还得点「保存这一版」，不想用再挑一份就是。
+   */
+  async function showSettingSources() {
+    if (!card) return;
+    const current = String(card.data?.description ?? '');
+    const candidates = [{ title: '现在这份', note: '卡里当前的描述', text: current }];
+    try {
+      const versions = await get(`/api/characters/${card.id}/versions`);
+      for (const version of (versions.items ?? []).slice(0, 6)) {
+        const text = String(version.data?.description ?? '');
+        if (!text || candidates.some((item) => item.text === text)) continue;
+        candidates.push({ title: `历史版本 · ${String(version.createdAt ?? '').slice(0, 16).replace('T', ' ')}`, note: version.note ?? '', text });
+      }
+    } catch {
+      // 拿不到版本历史就当没有，不影响其它来源
+    }
+    for (const entry of card.data?.character_book?.entries ?? []) {
+      const text = String(entry?.content ?? '');
+      if (!text || candidates.some((item) => item.text === text)) continue;
+      candidates.push({ title: `世界书条目 · ${entry?.comment || (entry?.keys ?? []).join('/') || '（无名）'}`, note: '卡内世界书', text });
+    }
+
+    const modal = openModal({
+      title: '选一份设定',
+      width: '620px',
+      body: h(
+        'div',
+        { style: { display: 'grid', gap: '10px', maxHeight: '60vh', overflow: 'auto' } },
+        h('div', { class: 'panel-note' }, '选中的只会填进「描述」框，不会直接改卡；不满意再挑一份就是。'),
+        ...candidates.map((item) =>
+          h(
+            'div',
+            { style: { display: 'grid', gap: '6px', padding: '10px', border: '1px solid var(--st-border)', borderRadius: '12px' } },
+            h('div', { style: { fontWeight: '600' } }, item.title),
+            item.note ? h('div', { class: 'panel-note' }, item.note) : null,
+            h('div', { style: { maxHeight: '140px', overflow: 'auto', fontSize: '13px', whiteSpace: 'pre-wrap' } }, item.text || '（空的）'),
+            h(
+              'div',
+              {},
+              h(
+                'button',
+                {
+                  class: 'btn small primary',
+                  onclick: () => {
+                    const control = controls.get('description');
+                    if (!control) {
+                      toast('先去「描述」那一栏，才能把这份填进去', { tone: 'warn' });
+                      return;
+                    }
+                    control.value = item.text;
+                    toast('填进描述框了，看一眼再点保存');
+                    modal.close();
+                  },
+                },
+                '用这份',
+              ),
+            ),
+          ),
+        ),
+      ),
+      actions: [{ label: '关闭' }],
+    });
+  }
 
   function collect() {
     const data = { ...card.data };

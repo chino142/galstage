@@ -24,40 +24,9 @@ import {
 import { openSse } from '../http/sse.mjs';
 import { httpFetch } from '../providers/http.mjs';
 import { safeAutoBackup } from './_helpers.mjs';
-import { readZip } from '../toolbox/zip.mjs';
+import { collectCardFiles } from '../cards/sources.mjs';
 
 const CARD_BODY_LIMIT = 64 * 1024 * 1024;
-
-const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-
-/** 是不是 zip（卡包常这么发）：看头四个字节。 */
-function looksLikeZip(buffer) {
-  return Buffer.isBuffer(buffer) && buffer.length > 4 && buffer.subarray(0, 4).equals(ZIP_MAGIC);
-}
-
-/**
- * 把一个 zip 摊成卡片文件列表：只挑 PNG / JSON，跳过目录和 macOS 的垃圾（__MACOSX / 点开头）。
- * 卡包通常还套一层文件夹，所以取 basename 当卡名。
- */
-function expandCardZip(name, buffer) {
-  let entries;
-  try {
-    entries = readZip(buffer);
-  } catch (err) {
-    throw new ValidationError(`${name} 打不开：${err?.message ?? '不是有效的 zip'}`);
-  }
-  const out = [];
-  for (const entry of entries) {
-    const entryName = String(entry?.name ?? '').replace(/\\/g, '/');
-    if (!entryName || entryName.endsWith('/')) continue;
-    if (entryName.startsWith('__MACOSX/')) continue;
-    if (entryName.split('/').some((segment) => segment.startsWith('.'))) continue;
-    if (!/\.(png|json)$/i.test(entryName)) continue;
-    out.push({ name: entryName.split('/').pop(), buffer: entry.data });
-  }
-  if (!out.length) throw new ValidationError(`${name} 里没有 PNG / JSON 卡`);
-  return out;
-}
 
 /** 头像在前端是 dataURL / base64 字符串，落库前解成 Buffer。 */
 function decodeAvatar(payload) {
@@ -72,6 +41,7 @@ function decodeAvatar(payload) {
 async function readCardFiles(ctx) {
   const raw = await ctx.readRawBody();
   const type = String(ctx.req.headers['content-type'] ?? '');
+  const name = ctx.query.name ?? '未命名';
   if (type.includes('json')) {
     let payload;
     try {
@@ -79,18 +49,9 @@ async function readCardFiles(ctx) {
     } catch {
       throw new ValidationError('请求体不是合法 JSON');
     }
-    const incoming = Array.isArray(payload?.files) ? payload.files : payload?.dataBase64 ? [payload] : [];
-    if (!incoming.length) throw new ValidationError('没有收到任何卡文件（files 为空）');
-    return incoming.flatMap((file) => {
-      const base64 = String(file.dataBase64 ?? file.data ?? '');
-      if (!base64) throw new ValidationError(`文件 ${file.name ?? '（无名）'} 没有内容`);
-      const item = { name: file.name ?? '未命名', buffer: Buffer.from(base64, 'base64') };
-      return looksLikeZip(item.buffer) ? expandCardZip(item.name, item.buffer) : [item];
-    });
+    return collectCardFiles({ json: payload, name });
   }
-  if (!raw.length) throw new ValidationError('请求体是空的，没有卡文件');
-  const name = ctx.query.name ?? '未命名';
-  return looksLikeZip(raw) ? expandCardZip(name, raw) : [{ name, buffer: raw }];
+  return collectCardFiles({ raw, name });
 }
 
 export function register(router, { engine, logger, assets }) {

@@ -51,7 +51,7 @@ import {
   workflowInputs,
 } from './comfy.mjs';
 import { PRICE_PRESETS, cacheSavings, describeTotals, fillDays, normaliseUsage } from './cost.mjs';
-import { REVIEW_SCOPES, buildReport, normalisePeriod } from './review.mjs';
+import { REVIEW_SCOPES, buildReport, normalisePeriod, previousPeriod } from './review.mjs';
 import { applyPromptKit, describePromptKit } from './prompt-kit.mjs';
 import { computeCost } from '../chat/tokens.mjs';
 import { BACKUP_KINDS, CLEANUP_TARGETS, defaultCleanupTargets, describeBackups, describeStats, formatBytes } from './maintenance.mjs';
@@ -1270,6 +1270,8 @@ export function createReviewService(ctx) {
     const found = store();
     if (!found) return buildReport({}, meta);
     const range = { from: meta.from, to: meta.to };
+    const prevMeta = previousPeriod(meta);
+    const prevRange = prevMeta ? { from: prevMeta.from, to: prevMeta.to } : null;
     const raw = {
       usage: {
         totals: found.usageTotals(range),
@@ -1287,11 +1289,57 @@ export function createReviewService(ctx) {
       creation: found.creationTotals(range),
       images: { ...found.imagesByStatus(range), gallery: found.galleryAssets(range) },
       charactersPlayed: found.charactersPlayed(range),
+      regenerations: found.regenerations(range),
+      companion: found.companionTime(range),
+      lifelines: found.lifelines(range),
+      previousLifelines: prevRange ? found.lifelines(prevRange) : [],
+      unlocks: found.showUnlocks(range),
     };
-    return buildReport(raw, meta);
+    const previousTotals = prevRange ? found.usageTotals(prevRange) : null;
+    const previous = prevRange
+      ? {
+          tokens: previousTotals.totalTokens,
+          turns: previousTotals.turns,
+          cost: previousTotals.cost,
+          activeDays: found.activityByDay(prevRange).length,
+          cardsPlayed: found.charactersPlayed(prevRange),
+        }
+      : null;
+    return buildReport(raw, meta, {
+      previous,
+      previousLabel: prevMeta?.label ?? '上一期',
+      lifetime: found.lifetime(),
+      allTimeLifelines: found.lifelines({}),
+    });
   }
 
-  return { periods, report, scopes: () => REVIEW_SCOPES };
+  /**
+   * AI 旁白：把这期的数字交给聊天模型写一段回顾。会花 token，所以只有前端点了才跑。
+   * 没配模型就明确报错，别假装写了。
+   */
+  async function narration(query = {}) {
+    const data = report(query);
+    const narrate = ctx.ports.narrate ?? null;
+    if (!narrate) throw new ProviderError('还没有可用的聊天模型，写不了回顾旁白');
+    const top = data.usage?.topCharacters?.[0];
+    const payload = [
+      `时间范围：${data.meta?.label ?? ''}`,
+      `聊了 ${data.headline.turns} 轮、${data.headline.messages} 条消息，消耗 ${data.headline.tokens} token`,
+      `活跃 ${data.headline.activeDays} 天，最长连续 ${data.headline.longestStreak} 天`,
+      top ? `陪得最多的是「${top.name}」` : '',
+      data.activity?.peak?.date ? `最投入的一天是 ${data.activity.peak.date}` : '',
+      data.lifelines?.fresh?.length ? `这期新认识：${data.lifelines.fresh.map((item) => item.name).join('、')}` : '',
+      data.lifelines?.returning?.length ? `久别重逢：${data.lifelines.returning.map((item) => item.name).join('、')}` : '',
+      data.unlocks?.endings ? `解锁了 ${data.unlocks.endings} 个结局` : '',
+      data.wordCloud?.length ? `常出现的标签：${data.wordCloud.slice(0, 6).map((item) => item.tag).join('、')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+    const text = await narrate(payload);
+    return { text, label: data.meta?.label ?? '' };
+  }
+
+  return { periods, report, narration, scopes: () => REVIEW_SCOPES };
 }
 
 /** 组装工具箱的各个服务。 */

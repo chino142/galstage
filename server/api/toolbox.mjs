@@ -411,6 +411,12 @@ export function register(router, { engine, repo, comfyRunner, comfyLauncher = nu
     ctx.json(200, review.report({ scope: ctx.query.scope ?? 'month', period: ctx.query.period ?? null })),
   );
 
+  /** AI 旁白：前端点按钮才调，会花 token。没配模型会明确报错。 */
+  router.post('/api/review/narration', async (ctx) => {
+    const body = (await ctx.body()) ?? {};
+    return ctx.json(200, await review.narration({ scope: body.scope ?? 'month', period: body.period ?? null }));
+  });
+
   // ------------------------------------------------------------------ 备份与维护
 
   const maintenance = engine.services.maintenance;

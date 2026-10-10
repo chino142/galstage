@@ -199,6 +199,8 @@ import { createCollectionsService } from '../core/collections/service.mjs';
 import { collectCardFiles, expandCardZip, looksLikeZip } from '../server/cards/sources.mjs';
 import { createTasksStore } from '../server/db/tasks.mjs';
 import { createTasksService } from '../core/tasks/service.mjs';
+import { translateTag, TAG_DICT_SIZE } from '../web/core/tag-i18n.mjs';
+import { previousPeriod, buildCompare, buildWordCloud, classifyLifelines, buildBadges } from '../core/toolbox/review.mjs';
 import { createMcpServer as createTavernMcpServer, MCP_RETURN_MODES } from '../core/mcp/server.mjs';
 import { createZip, readZip } from '../server/toolbox/zip.mjs';
 import { createBackupStore } from '../server/db/backup.mjs';
@@ -6557,6 +6559,72 @@ test('任务中心：干过的活留下记录，失败的留原因，出图队�
   } finally {
     cleanup();
   }
+});
+
+test('标签翻译：认识的外文标签显示中文，不认识的原样留着', () => {
+  assert.ok(TAG_DICT_SIZE > 30, '词典别太寒碜');
+  assert.deepEqual(translateTag('tsundere'), { raw: 'tsundere', label: '傲娇', translated: true });
+  assert.equal(translateTag('ヤンデレ').label, '病娇');
+  assert.equal(translateTag('TSUNdere').translated, true, '大小写不敏感');
+  assert.equal(translateTag('幼馴染').label, '青梅竹马');
+  assert.equal(translateTag('我的自创标签').translated, false);
+  assert.equal(translateTag('我的自创标签').label, '我的自创标签');
+  assert.equal(translateTag('').label, '');
+  assert.equal(translateTag(null).label, '');
+});
+
+test('报告加分项：环比 / 词云 / 新老朋友 / 徽章都是本地算的', () => {
+  const now = new Date('2026-10-15T12:00:00+08:00');
+  const month = normalisePeriod('month', '2026-10', now);
+  assert.equal(previousPeriod(month, now).period, '2026-09');
+  assert.equal(previousPeriod(normalisePeriod('year', '2026', now), now).period, '2025');
+  assert.equal(previousPeriod(normalisePeriod('all'), now), null);
+  assert.equal(previousPeriod(normalisePeriod('month', '2026-01', now), now).period, '2025-12', '1 月的上一期是去年 12 月');
+
+  const compare = buildCompare({ tokens: 200, turns: 10, cost: 2, activeDays: 5, cardsPlayed: 3 }, { tokens: 100, turns: 10, cost: 0, activeDays: 1, cardsPlayed: 0 });
+  assert.equal(compare.tokens, 100, '翻倍就是 +100%');
+  assert.equal(compare.turns, 0);
+  assert.equal(compare.activeDays, 400);
+  assert.equal(compare.cardsPlayed, 100, '上期是 0 就按从无到有算');
+  assert.equal(buildCompare({ tokens: 1 }, null), null);
+
+  const cloud = buildWordCloud([
+    { name: '甲', tokens: 100, tags: ['狐狸', '治愈'] },
+    { name: '乙', tokens: 50, tags: ['狐狸'] },
+  ]);
+  assert.equal(cloud[0].tag, '狐狸', 'token 高的排前面');
+  assert.equal(cloud[0].tokens, 150);
+  assert.deepEqual(cloud[0].characters, ['甲', '乙']);
+  assert.equal(cloud[0].weight, 1);
+  assert.ok(cloud[1].weight < 1);
+
+  const current = [
+    { key: 'c1', name: '甲', firstAt: '2026-10-05T00:00:00Z', lastAt: '2026-10-06T00:00:00Z' },
+    { key: 'c2', name: '乙', firstAt: '2026-10-04T00:00:00Z', lastAt: '2026-10-04T00:00:00Z' },
+  ];
+  const previous = [
+    { key: 'c1', name: '甲', firstAt: '2026-09-01T00:00:00Z', lastAt: '2026-09-10T00:00:00Z' },
+    { key: 'c3', name: '丙', firstAt: '2026-09-02T00:00:00Z', lastAt: '2026-09-20T00:00:00Z' },
+  ];
+  const allTime = [
+    { key: 'c1', name: '甲', firstAt: '2026-09-01T00:00:00Z' },
+    { key: 'c2', name: '乙', firstAt: '2026-10-04T00:00:00Z' },
+  ];
+  const lifelines = classifyLifelines({ current, previous, allTime, from: month.from, to: month.to });
+  assert.deepEqual(lifelines.fresh.map((item) => item.name), ['乙'], '累计第一次落在这期的才算新认识');
+  assert.deepEqual(lifelines.returning.map((item) => item.name), ['甲'], '隔了 25 天又回来');
+  assert.equal(lifelines.returning[0].days, 25);
+  assert.deepEqual(lifelines.cold.map((item) => item.name), ['丙'], '上期聊过、这期没出现');
+
+  const badges = buildBadges(
+    { headline: { longestStreak: 8, cardsPlayed: 12, cardsCreated: 2 }, activity: { nightMessages: 20 }, images: { done: 3 } },
+    { turns: 150, totalTokens: 2_000_000, firstMessageAt: '2026-01-02T00:00:00Z' },
+  );
+  const ids = badges.map((badge) => badge.id);
+  for (const wanted of ['turns-100', 'tokens-1m', 'streak-7', 'cards-10', 'wrote-card', 'night-owl', 'since']) {
+    assert.ok(ids.includes(wanted), `该有徽章 ${wanted}`);
+  }
+  assert.ok(!ids.includes('turns-1000'), '没到就不给');
 });
 
 const result = await run();

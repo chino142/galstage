@@ -235,6 +235,22 @@ export function createRuntime({ dataDir, logger: providedLogger = null, withComf
       }
       return out.trim();
     },
+    /**
+     * 报告页的「AI 旁白」：把这期的统计丢给聊天模型，让它写一段回顾。
+     * 会花 token，所以只有前端点按钮才走这里；没配模型就抛错。
+     */
+    narrate: async (text) => {
+      const resolved = resolveModel({ bindings: listBindings(db.repo, { kind: 'chat' }), kind: 'chat' });
+      if (!resolved?.providerId) throw new ProviderError('还没有可用的聊天模型，写不了回顾旁白：去「模型接入」加一个');
+      const system =
+        '你在给一份"角色扮演月度回顾"写卷首语。照给定的统计写 2~4 句中文，语气温暖、具体、不煽情，'
+        + '不要提"数据""统计""token"这些词，也不要罗列数字清单。直接给正文。';
+      let out = '';
+      for await (const chunk of models.chat(resolved.providerId, { model: resolved.model ?? null, system, messages: [{ role: 'user', content: text }], params: {} })) {
+        if (chunk.type === 'text') out += chunk.text;
+      }
+      return out.trim();
+    },
     memoryMessages: (chatId) => chatStore.listMessages(chatId),
     // 聊天里挂的提示词预设（「切预设」靠它生效）
     getPreset: (presetId) => (presetId ? promptStore.getPreset(presetId)?.data ?? null : null),

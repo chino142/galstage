@@ -77,7 +77,8 @@ export function createReviewStore({ repo }) {
     const { sql, params } = clause('u.created_at', range);
     const rows = repo.all(
       `SELECT u.character_id AS character_id, c.name AS name, c.avatar_asset_id AS avatar, c.data AS card_data, COUNT(*) AS turns,
-              COALESCE(SUM(u.total_tokens), 0) AS tokens, COALESCE(SUM(u.cost), 0) AS cost
+              COALESCE(SUM(u.total_tokens), 0) AS tokens, COALESCE(SUM(u.cost), 0) AS cost,
+              (SELECT GROUP_CONCAT(t.tag, CHAR(1)) FROM character_tags t WHERE t.character_id = u.character_id) AS tags
          FROM usage_log u
          LEFT JOIN characters c ON c.id = u.character_id
          ${sql}
@@ -91,6 +92,7 @@ export function createReviewStore({ repo }) {
       name: row.name ?? null,
       avatarAssetId: row.avatar ?? null,
       coverAssetId: readCoverAsset(row.card_data),
+      tags: String(row.tags ?? '').split('\u0001').filter(Boolean),
       turns: Number(row.turns ?? 0),
       tokens: Number(row.tokens ?? 0),
       cost: Number(row.cost ?? 0),
@@ -288,6 +290,133 @@ export function createReviewStore({ repo }) {
     return { months, years };
   }
 
+  /**
+   * 重生次数：一条回复上多出来的候选（swipes）就算"你让它重写了一次"。
+   * JSON1 万一没有就退化成 0，不让报告整个挂掉。
+   */
+  function regenerations(range = {}) {
+    const { sql, params } = clause('created_at', range);
+    try {
+      const row = repo.get(
+        `SELECT COALESCE(SUM(MAX(json_array_length(swipes) - 1, 0)), 0) AS extra, COUNT(*) AS total
+           FROM chat_messages ${andMore(sql, "role = 'assistant' AND is_system = 0")}`,
+        params,
+      );
+      return { extra: Number(row?.extra ?? 0), messages: Number(row?.total ?? 0) };
+    } catch {
+      return { extra: 0, messages: 0 };
+    }
+  }
+
+  /**
+   * 陪伴时长（估算）：库里没记"会话开始 / 结束"，所以按消息时间戳推 ——
+   * 同一个对话里相邻两条间隔小于 gapMinutes 就算同一场，把这些间隔加起来。
+   * 明确是估算：挂着页面没说话的时间算不进去。
+   */
+  function companionTime(range = {}, { gapMinutes = 30 } = {}) {
+    const { sql, params } = clause('created_at', range);
+    const rows = repo.all(
+      `SELECT chat_id, created_at FROM chat_messages ${andMore(sql, "is_system = 0 AND role IN ('user','assistant')")}
+        ORDER BY chat_id, created_at`,
+      params,
+    );
+    const gapMs = Math.max(1, Number(gapMinutes) || 30) * 60000;
+    let seconds = 0;
+    let sessions = 0;
+    let previous = null;
+    for (const row of rows) {
+      const at = Date.parse(row.created_at);
+      if (!Number.isFinite(at)) continue;
+      if (previous && previous.chatId === row.chat_id) {
+        const delta = at - previous.at;
+        if (delta > 0 && delta <= gapMs) seconds += delta / 1000;
+        else sessions += 1;
+      } else {
+        sessions += 1;
+      }
+      previous = { chatId: row.chat_id, at };
+    }
+    return { seconds: Math.round(seconds), sessions, messages: rows.length, gapMinutes };
+  }
+
+  /**
+   * 每个角色这段时间的第一次 / 最后一次说话、说了多少条。
+   * 群聊里 member_id 也能当键（跟羁绊那边一个口径）。
+   */
+  function lifelines(range = {}) {
+    // 这张查了 characters，created_at 两边都有，必须写全名
+    const { sql, params } = clause('m.created_at', range);
+    const rows = repo.all(
+      `SELECT COALESCE(character_id, member_id) AS key, c.name AS name,
+              MIN(m.created_at) AS first_at, MAX(m.created_at) AS last_at, COUNT(*) AS n
+         FROM chat_messages m
+         LEFT JOIN characters c ON c.id = m.character_id
+         ${sql ? `${sql} AND` : 'WHERE'} m.role = 'assistant' AND m.is_system = 0 AND COALESCE(m.character_id, m.member_id) IS NOT NULL
+        GROUP BY key`,
+      params,
+    );
+    return rows.map((row) => ({
+      key: String(row.key),
+      name: row.name ?? null,
+      firstAt: row.first_at,
+      lastAt: row.last_at,
+      count: Number(row.n ?? 0),
+    }));
+  }
+
+  /**
+   * 演出层解锁的结局 / CG：存在每个对话的 settings.show 里（不属于任何表），
+   * 所以这里把 settings 扫一遍，按条目自己的时间戳筛。
+   */
+  function showUnlocks(range = {}) {
+    const from = range.from ? Date.parse(range.from) : null;
+    const to = range.to ? Date.parse(range.to) : null;
+    const inRange = (value) => {
+      const at = Date.parse(value ?? '');
+      if (!Number.isFinite(at)) return false;
+      if (from !== null && at < from) return false;
+      if (to !== null && at >= to) return false;
+      return true;
+    };
+    let endings = 0;
+    let cg = 0;
+    let routes = 0;
+    for (const row of repo.all("SELECT settings FROM chats WHERE settings IS NOT NULL AND settings != '{}'")) {
+      let settings;
+      try {
+        settings = JSON.parse(row.settings ?? '{}');
+      } catch {
+        continue;
+      }
+      const show = settings?.show ?? {};
+      for (const item of Array.isArray(show.endings) ? show.endings : []) if (inRange(item?.at)) endings += 1;
+      for (const item of Array.isArray(show.unlocks) ? show.unlocks : []) if (inRange(item?.at)) cg += 1;
+      for (const item of Array.isArray(show.routes) ? show.routes : []) if (item?.unlocked && inRange(item.unlockedAt)) routes += 1;
+    }
+    return { endings, cg, routes };
+  }
+
+  /** 累计（不按区间）：徽章和"陪伴多久了"这类长期数字要用。 */
+  function lifetime() {
+    const usage = usageTotals({});
+    const count = (table) => {
+      try {
+        return Number(repo.get(`SELECT COUNT(*) AS n FROM ${table}`)?.n ?? 0);
+      } catch {
+        return 0;
+      }
+    };
+    const first = repo.get('SELECT MIN(created_at) AS at FROM chat_messages');
+    return {
+      turns: usage.turns,
+      totalTokens: usage.totalTokens,
+      cost: usage.cost,
+      characters: count('characters'),
+      chats: count('chats'),
+      firstMessageAt: first?.at ?? null,
+    };
+  }
+
   return {
     usageTotals,
     usageByCharacter,
@@ -302,6 +431,11 @@ export function createReviewStore({ repo }) {
     creationTotals,
     imagesByStatus,
     galleryAssets,
+    regenerations,
+    companionTime,
+    lifelines,
+    showUnlocks,
+    lifetime,
     availablePeriods,
   };
 }

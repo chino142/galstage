@@ -25,7 +25,7 @@ import { createPlansService } from './plans/service.mjs';
 import { createCollectionsService } from './collections/service.mjs';
 import { createTasksService } from './tasks/service.mjs';
 
-export const ENGINE_VERSION = '0.6.0';
+export const ENGINE_VERSION = '0.7.0';
 
 export function createEngine({ settings = {}, bus = appBus, ports = {} } = {}) {
   const registry = createRegistry(MODULES);

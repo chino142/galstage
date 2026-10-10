@@ -12,6 +12,7 @@ import { panel, table, emptyState, errorBox, kv, field } from '../ui/components.
 import { openModal, confirmDialog } from '../ui/modal.mjs';
 import { toast, toastError } from '../ui/toast.mjs';
 import { createCardChat, openCardChat, openCardChatsModal } from './card-chats.mjs';
+import { translateTag } from '../core/tag-i18n.mjs';
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -446,7 +447,9 @@ export function createCardsView(module, ctx) {
         h('button', {
           class: `chip-btn${state.tag === entry.tag ? ' active' : ''}`,
           onclick: () => { state.tag = state.tag === entry.tag ? '' : entry.tag; void refresh(); },
-        }, `${entry.tag} ${entry.count}`),
+          // 外文标签显示成中文，鼠标停上去还能看到原文（筛选照旧用原文）
+          title: translateTag(entry.tag).translated ? entry.tag : null,
+        }, `${translateTag(entry.tag).label} ${entry.count}`),
       ),
     );
   }
@@ -466,7 +469,12 @@ export function createCardsView(module, ctx) {
           h('div', { class: 'panel-note', style: { fontSize: '12px' } }, (card.data?.description ?? '').slice(0, 46) || '（还没有简介）'),
         ),
       ),
-      card.tags.length ? card.tags.map((tag) => h('span', { class: 'chip small' }, tag)) : h('span', { class: 'panel-note' }, '—'),
+      card.tags.length
+        ? card.tags.map((tag) => {
+            const hit = translateTag(tag);
+            return h('span', { class: 'chip small', title: hit.translated ? hit.raw : null }, hit.label);
+          })
+        : h('span', { class: 'panel-note' }, '—'),
       `${card.specVersion?.toUpperCase() ?? ''} · ${card.versionCount ?? 0} 版`,
       (card.updatedAt ?? '').slice(0, 19).replace('T', ' '),
       h(

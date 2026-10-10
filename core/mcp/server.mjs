@@ -63,7 +63,7 @@ export function confirmResult(what, hint = null) {
 /**
  * @param {{services?:object, stores?:object, repo?:object, version?:string}} deps
  */
-export function createMcpServer({ services = {}, stores = {}, repo = null, version = '0.6.0', extraTools = [] } = {}) {
+export function createMcpServer({ services = {}, stores = {}, repo = null, version = '0.7.0', extraTools = [] } = {}) {
   const cards = services.cards ?? {};
   const chat = services.chat ?? {};
   const worldbook = services.worldbook ?? {};

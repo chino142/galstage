@@ -12,6 +12,7 @@ import { h } from '../core/dom.mjs';
 import { get } from '../core/api.mjs';
 import { panel, loading, errorBox, emptyState, table, kv } from '../ui/components.mjs';
 import { toastError } from '../ui/toast.mjs';
+import { translateTag } from '../core/tag-i18n.mjs';
 
 function tokens(value) {
   const amount = Number(value ?? 0);
@@ -218,6 +219,19 @@ function sideBySide(left, right) {
   return h('div', { class: 'grid-2' }, h('div', {}, left), h('div', {}, right));
 }
 
+function escapeHtml(text) {
+  return String(text ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function saveAsFile(filename, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = h('a', { href: url, download: filename });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 export function createReviewView(module) {
   const el = h('div', { class: 'view' });
   const controlsHost = h('div', {});
@@ -226,6 +240,13 @@ export function createReviewView(module) {
   const splitHost = h('div', {});
   const activityHost = h('div', {});
   const galleryHost = h('div', {});
+  const cloudHost = h('div', {});
+  const friendsHost = h('div', {});
+  const companionHost = h('div', {});
+  const pagerRow = h('div', { class: 'chip-row' });
+  const pageHost = h('div', {});
+  let lastReport = null;
+  let pageIndex = 0;
 
   const state = { scope: 'month', period: null, periods: null };
   const scopeRow = h('div', { class: 'chip-row' });
@@ -238,7 +259,31 @@ export function createReviewView(module) {
     void refresh();
   });
 
-  el.append(controlsHost, summaryHost, cardsHost, splitHost, activityHost, galleryHost);
+  // 分页：一屏一个主题（照 PotatoVN 年报那种翻页感觉），别一路往下堆
+  const PAGES = [
+    { id: 'overview', title: '概览', hosts: () => [summaryHost] },
+    { id: 'cards', title: '陪你最多的卡', hosts: () => [cardsHost, cloudHost] },
+    { id: 'cost', title: '花费与创作', hosts: () => [splitHost] },
+    { id: 'life', title: '陪伴与老友', hosts: () => [activityHost, friendsHost, companionHost] },
+    { id: 'gallery', title: '本月出图', hosts: () => [galleryHost] },
+  ];
+
+  function renderPager() {
+    pagerRow.replaceChildren(
+      ...PAGES.map((page, index) =>
+        h('button', { class: `chip-btn${index === pageIndex ? ' active' : ''}`, onclick: () => showPage(index) }, page.title),
+      ),
+      h('button', { class: 'btn small', onclick: () => exportReport(lastReport) }, '导出报告'),
+    );
+  }
+
+  function showPage(index) {
+    pageIndex = Math.max(0, Math.min(PAGES.length - 1, Number(index) || 0));
+    pageHost.replaceChildren(...PAGES[pageIndex].hosts());
+    renderPager();
+  }
+
+  el.append(controlsHost, pagerRow, pageHost);
 
   function renderControls(meta) {
     const scopes = state.periods?.scopes ?? ['month', 'year', 'all'];
@@ -288,6 +333,10 @@ export function createReviewView(module) {
     const head = report.headline ?? {};
     const lines = Array.isArray(report.commentary) ? report.commentary : [];
     const top = report.usage?.topCharacters?.[0] ?? null;
+    const compare = report.compare;
+    const deltaText = (value) => `${Number(value) > 0 ? '+' : ''}${value}%`;
+    const badges = report.badges ?? [];
+    const narration = report.__narration ?? null;
     summaryHost.replaceChildren(
       panel(
         '概览',
@@ -307,6 +356,118 @@ export function createReviewView(module) {
             metric('🃏', `${head.cardsCreated ?? 0} 张`, '新建的卡'),
           ),
         ),
+        compare
+          ? h(
+              'div',
+              { class: 'chip-row', style: { marginTop: '12px' } },
+              h('span', { class: 'panel-note' }, `对比${compare.label}：`),
+              h('span', { class: 'chip' }, `token ${deltaText(compare.tokens)}`),
+              h('span', { class: 'chip' }, `轮数 ${deltaText(compare.turns)}`),
+              h('span', { class: 'chip' }, `花费 ${deltaText(compare.cost)}`),
+              h('span', { class: 'chip' }, `活跃天数 ${deltaText(compare.activeDays)}`),
+            )
+          : null,
+        badges.length
+          ? h(
+              'div',
+              { style: { marginTop: '12px' } },
+              h('div', { class: 'panel-note', style: { marginBottom: '6px' } }, '徽章'),
+              h('div', { class: 'chip-row' }, badges.map((badge) => h('span', { class: 'chip', title: badge.desc }, `${badge.icon} ${badge.title}`))),
+            )
+          : null,
+        h(
+          'div',
+          { style: { marginTop: '14px' } },
+          h('button', { class: 'btn', onclick: () => void writeNarration() }, '✒️ 让模型写一段回顾（会花 token）'),
+          narration ? h('div', { class: 'panel-note', style: { marginTop: '8px', whiteSpace: 'pre-wrap', lineHeight: '1.7' } }, narration) : null,
+        ),
+      ),
+    );
+  }
+
+  /** AI 旁白：会花 token，所以先问一句再发。 */
+  async function writeNarration() {
+    if (!lastReport) return;
+    if (!confirm('让模型读这期的统计写一段回顾？这会花一点 token。')) return;
+    try {
+      const result = await post('/api/review/narration', { scope: state.scope, period: state.period });
+      lastReport = { ...lastReport, __narration: result.text || '（模型没写出内容）' };
+      renderSummary(lastReport);
+      toast('写好了');
+    } catch (err) {
+      toastError(err);
+    }
+  }
+
+  /** 词云：这期玩过的卡身上带的标签，按 token 加权，字号跟着权重走。 */
+  function renderCloud(report) {
+    const cloud = report.wordCloud ?? [];
+    const size = (weight) => `${13 + Math.round(Number(weight ?? 0) * 12)}px`;
+    cloudHost.replaceChildren(
+      panel(
+        '词云',
+        cloud.length ? `这期出现过的标签 · ${cloud.length} 个` : '',
+        cloud.length
+          ? h(
+              'div',
+              { style: { display: 'flex', flexWrap: 'wrap', gap: '10px 16px', alignItems: 'baseline', lineHeight: '1.9' } },
+              cloud.map((item) =>
+                h(
+                  'span',
+                  {
+                    style: { fontSize: size(item.weight), color: `rgba(199,107,155,${0.55 + Number(item.weight ?? 0) * 0.45})` },
+                    title: `${item.tag} · 来自 ${item.characters.join('、')}`,
+                  },
+                  translateTag(item.tag).label,
+                ),
+              ),
+            )
+          : emptyState({ icon: '☁️', title: '还没有标签可画', desc: '给这期聊过的卡打上标签，这里就会长出词云。' }),
+      ),
+    );
+  }
+
+  /** 新认识 / 久别重逢 / 被冷落。 */
+  function renderFriends(report) {
+    const { fresh = [], returning = [], cold = [] } = report.lifelines ?? {};
+    const block = (title, icon, items, note) =>
+      panel(
+        title,
+        items.length ? `${items.length} 位` : '',
+        items.length
+          ? h(
+              'div',
+              { class: 'chip-row' },
+              items.map((item) => h('span', { class: 'chip', title: note(item) }, `${icon} ${item.name ?? '（未命名）'}`)),
+            )
+          : h('div', { class: 'panel-note' }, '这一期没有'),
+      );
+    friendsHost.replaceChildren(
+      block('这期新认识', '🆕', fresh, (item) => `第一次说话：${String(item.at ?? '').slice(0, 10)}`),
+      block('久别重逢', '🤝', returning, (item) => `隔了 ${item.days} 天又回来`),
+      block('这期没出现的卡', '💤', cold, (item) => `上期还在聊，最后一次是 ${String(item.lastAt ?? '').slice(0, 10)}`),
+    );
+  }
+
+  /** 陪伴时长（估算）+ 重生 + 演出解锁。 */
+  function renderCompanion(report) {
+    const companion = report.companion ?? {};
+    const unlocks = report.unlocks ?? {};
+    const minutes = Math.round(Number(companion.seconds ?? 0) / 60);
+    const duration =
+      minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分` : minutes > 0 ? `${minutes} 分钟` : '不到 1 分钟';
+    companionHost.replaceChildren(
+      panel(
+        '陪伴与产出',
+        companion.estimated ? '时长是估算（按消息间隔推的）' : '',
+        kv([
+          ['陪伴时长', companion.sessions ? `${duration}（约 ${companion.sessions} 场）` : '这一期还没聊'],
+          ['重写了多少次', `${report.regenerations ?? 0} 次`],
+          ['解锁结局', `${unlocks.endings ?? 0} 个`],
+          ['解锁 CG', `${unlocks.cg ?? 0} 张`],
+          ['解锁路线', `${unlocks.routes ?? 0} 条`],
+        ]),
+        h('div', { class: 'panel-note', style: { marginTop: '8px' } }, `估算口径：同一个对话里相邻消息间隔小于 ${companion.gapMinutes ?? 30} 分钟算同一场；挂着页面没说话的时间算不进去。`),
       ),
     );
   }
@@ -425,20 +586,96 @@ export function createReviewView(module) {
     const query = `scope=${encodeURIComponent(state.scope)}${state.period ? `&period=${encodeURIComponent(state.period)}` : ''}`;
     try {
       const report = await get(`/api/review/report?${query}`);
+      lastReport = report;
       renderControls(report.meta);
       renderSummary(report);
       renderCards(report);
       renderSplit(report);
       renderActivity(report);
+      renderCloud(report);
+      renderFriends(report);
+      renderCompanion(report);
       renderGallery(report);
+      showPage(pageIndex);
     } catch (err) {
       summaryHost.replaceChildren(panel('月报 / 年报', null, errorBox(err, { onRetry: refresh })));
       cardsHost.replaceChildren();
       splitHost.replaceChildren();
       activityHost.replaceChildren();
+      cloudHost.replaceChildren();
+      friendsHost.replaceChildren();
+      companionHost.replaceChildren();
       galleryHost.replaceChildren();
       toastError(err);
     }
+  }
+
+  /** 导出：生成一份自包含 HTML，浏览器里能直接打印成 PDF（也方便当长图存）。 */
+  function exportReport(report) {
+    if (!report) return;
+    const head = report.headline ?? {};
+    const rows = [
+      ['时间范围', report.meta?.label ?? ''],
+      ['聊了多少轮', head.turns ?? 0],
+      ['消息条数', head.messages ?? 0],
+      ['消耗 token', head.tokens ?? 0],
+      ['花费', `¥${money(head.cost)}`],
+      ['写下的字', head.words ?? 0],
+      ['活跃天数', `${head.activeDays ?? 0}（最长连续 ${head.longestStreak ?? 0} 天）`],
+      ['玩了几张卡', head.cardsPlayed ?? 0],
+      ['写了几张卡', head.cardsCreated ?? 0],
+      ['重写了多少次', report.regenerations ?? 0],
+      ['解锁结局 / CG', `${report.unlocks?.endings ?? 0} / ${report.unlocks?.cg ?? 0}`],
+      ['陪伴时长（估算）', `${Math.round(Number(report.companion?.seconds ?? 0) / 60)} 分钟`],
+    ];
+    const top = report.usage?.topCharacters ?? [];
+    const tags = report.wordCloud ?? [];
+    const friends = report.lifelines ?? {};
+    const friendRow = (title, items, note) =>
+      items?.length
+        ? `<tr><td>${escapeHtml(title)}</td><td>${items.map((item) => `${escapeHtml(item.name ?? '')}（${escapeHtml(note(item))}）`).join('、')}</td></tr>`
+        : '';
+    const style = [
+      'body{font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif;margin:34px;color:#3a2a3a;background:#fff;line-height:1.6}',
+      'h1{font-size:22px;margin:0 0 2px}',
+      'h2{font-size:15px;margin:24px 0 8px;color:#a2557f}',
+      'table{border-collapse:collapse;font-size:13px}',
+      'td{padding:4px 16px 4px 0;vertical-align:top}',
+      'td:first-child{color:#8a7794;white-space:nowrap}',
+      '.cloud{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline}',
+      '.nar{margin:10px 0 0;padding:12px 14px;background:#fdf6fa;border-left:3px solid #e8a0bf;white-space:pre-wrap}',
+      '.badges span{display:inline-block;margin:0 8px 6px 0;padding:2px 10px;border-radius:999px;background:#fdf6fa;border:1px solid #f0d6e4;font-size:12px}',
+      'footer{margin-top:28px;color:#b9a7c0;font-size:11px}',
+    ].join('\n');
+    const parts = [
+      '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">',
+      `<title>Silver Tavern · ${escapeHtml(report.meta?.label ?? '报告')}</title>`,
+      `<style>\n${style}\n</style></head><body>`,
+      '<h1>Silver Tavern · 月度 / 年度报告</h1>',
+      `<div style="color:#8a7794;font-size:13px">${escapeHtml(report.meta?.label ?? '')}</div>`,
+      report.__narration ? `<p class="nar">${escapeHtml(report.__narration)}</p>` : '',
+      (report.badges ?? []).length
+        ? `<div class="badges">${report.badges.map((badge) => `<span>${escapeHtml(badge.icon)} ${escapeHtml(badge.title)}</span>`).join('')}</div>`
+        : '',
+      '<h2>概览</h2><table>',
+      rows.map(([key, value]) => `<tr><td>${escapeHtml(key)}</td><td>${escapeHtml(String(value ?? ''))}</td></tr>`).join(''),
+      '</table>',
+      '<h2>陪你最多的卡</h2><table>',
+      top.map((row) => `<tr><td>${escapeHtml(row.name ?? '')}</td><td>${row.tokens} token · ${row.turns} 轮 · ${row.share}%</td></tr>`).join('') || '<tr><td>（这期没有记录）</td></tr>',
+      '</table>',
+      '<h2>词云</h2><div class="cloud">',
+      tags.map((item) => `<span style="font-size:${13 + Math.round(Number(item.weight ?? 0) * 12)}px;color:rgba(199,107,155,${0.55 + Number(item.weight ?? 0) * 0.45})">${escapeHtml(item.tag)}</span>`).join('') || '（这期没有标签）',
+      '</div>',
+      '<h2>新朋友 / 老朋友</h2><table>',
+      friendRow('这期新认识', friends.fresh, (item) => `第一次：${String(item.at ?? '').slice(0, 10)}`),
+      friendRow('久别重逢', friends.returning, (item) => `隔了 ${item.days} 天`),
+      friendRow('这期没出现', friends.cold, (item) => `上次 ${String(item.lastAt ?? '').slice(0, 10)}`),
+      '</table>',
+      '<footer>由 Silver Tavern 生成 · 在浏览器里可以直接打印成 PDF</footer>',
+      '</body></html>',
+    ];
+    saveAsFile(`silver-tavern-${report.meta?.period ?? 'all'}.html`, parts.filter(Boolean).join('\n'), 'text/html');
+    toast('导出好了（打开后可以打印成 PDF）');
   }
 
   async function mount() {

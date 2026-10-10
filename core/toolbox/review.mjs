@@ -81,6 +81,105 @@ export function longestStreak(dates = []) {
   return longest;
 }
 
+/** 上一期（月报比上月、年报比去年；"全部时间"没有可比的一期）。 */
+export function previousPeriod(meta, now = new Date()) {
+  if (!meta || meta.scope === 'all') return null;
+  if (meta.scope === 'year') return normalisePeriod('year', String(Number(meta.period) - 1), now);
+  const [year, month] = String(meta.period).split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+  const prevYear = month === 1 ? year - 1 : year;
+  const prevMonth = month === 1 ? 12 : month - 1;
+  return normalisePeriod('month', `${prevYear}-${pad2(prevMonth)}`, now);
+}
+
+/** 环比：这一期相对上一期涨跌多少（百分比）。上一期是 0 就按"从无到有"算 +100%。 */
+export function buildCompare(current = {}, previous = null, label = '上一期') {
+  if (!previous) return null;
+  const delta = (now, before) => {
+    const a = Number(now ?? 0);
+    const b = Number(before ?? 0);
+    if (!b) return a ? 100 : 0;
+    return Math.round(((a - b) / b) * 1000) / 10;
+  };
+  return {
+    label,
+    tokens: delta(current.tokens, previous.tokens),
+    turns: delta(current.turns, previous.turns),
+    cost: delta(current.cost, previous.cost),
+    activeDays: delta(current.activeDays, previous.activeDays),
+    cardsPlayed: delta(current.cardsPlayed, previous.cardsPlayed),
+  };
+}
+
+/** 词云：把这期玩过的卡的标签，按 token 加权数一遍。 */
+export function buildWordCloud(topCharacters = []) {
+  const map = new Map();
+  for (const row of topCharacters) {
+    for (const raw of row.tags ?? []) {
+      const tag = String(raw ?? '').trim();
+      if (!tag) continue;
+      const found = map.get(tag) ?? { tag, tokens: 0, characters: [] };
+      found.tokens += Number(row.tokens ?? 0);
+      if (row.name && !found.characters.includes(row.name)) found.characters.push(row.name);
+      map.set(tag, found);
+    }
+  }
+  const list = [...map.values()].sort((left, right) => right.tokens - left.tokens).slice(0, 24);
+  const max = list[0]?.tokens || 1;
+  return list.map((item) => ({ ...item, weight: Math.round((item.tokens / max) * 100) / 100 }));
+}
+
+/**
+ * 老朋友 / 新朋友：
+ *   fresh     = 这一期第一次说话（按累计第一次算，不是"上期没聊"）
+ *   returning = 上期聊过，中间隔了 ≥14 天又回来
+ *   cold      = 上期聊过，这一期没出现
+ */
+export function classifyLifelines({ current = [], previous = [], allTime = [], from = null, to = null } = {}) {
+  const inRange = (value) => {
+    const at = Date.parse(value ?? '');
+    if (!Number.isFinite(at)) return false;
+    if (from && at < Date.parse(from)) return false;
+    if (to && at >= Date.parse(to)) return false;
+    return true;
+  };
+  const prevMap = new Map(previous.map((row) => [row.key, row]));
+  const currentKeys = new Set(current.map((row) => row.key));
+  const fresh = allTime
+    .filter((row) => inRange(row.firstAt))
+    .map((row) => ({ key: row.key, name: row.name, at: row.firstAt }));
+  const returning = [];
+  for (const row of current) {
+    const prev = prevMap.get(row.key);
+    if (!prev) continue;
+    const gapDays = Math.round((Date.parse(row.firstAt) - Date.parse(prev.lastAt)) / 86400000);
+    if (Number.isFinite(gapDays) && gapDays >= 14) returning.push({ key: row.key, name: row.name, days: gapDays, lastAt: prev.lastAt });
+  }
+  const cold = previous
+    .filter((row) => !currentKeys.has(row.key))
+    .map((row) => ({ key: row.key, name: row.name, lastAt: row.lastAt }));
+  return { fresh, returning, cold };
+}
+
+/** 徽章：规则写死在本地，不花 token。 */
+export function buildBadges(report = {}, lifetime = {}) {
+  const head = report.headline ?? {};
+  const out = [];
+  const add = (id, icon, title, desc) => out.push({ id, icon, title, desc });
+  if (Number(lifetime.turns ?? head.turns) >= 1) add('first-turn', '🌱', '开张了', '至少聊过一轮');
+  if (Number(lifetime.turns ?? 0) >= 100) add('turns-100', '💬', '一百轮', `累计 ${lifetime.turns} 轮`);
+  if (Number(lifetime.turns ?? 0) >= 1000) add('turns-1000', '🔥', '一千轮', `累计 ${lifetime.turns} 轮`);
+  if (Number(lifetime.totalTokens ?? 0) >= 1_000_000) add('tokens-1m', '🧮', '百万 token', `累计 ${Math.round(Number(lifetime.totalTokens) / 1_000_000)}M token`);
+  if (Number(head.longestStreak ?? 0) >= 7) add('streak-7', '📅', '一周没断', `最长连续 ${head.longestStreak} 天`);
+  if (Number(head.longestStreak ?? 0) >= 30) add('streak-30', '🗓️', '一个月没断', `最长连续 ${head.longestStreak} 天`);
+  if (Number(head.cardsPlayed ?? 0) >= 10) add('cards-10', '🎴', '十张卡', `这期聊过 ${head.cardsPlayed} 张`);
+  if (Number(head.cardsCreated ?? 0) >= 1) add('wrote-card', '🃏', '写过卡', `这期新建 ${head.cardsCreated} 张`);
+  if (Number(report.images?.done ?? 0) >= 10) add('images-10', '🖼️', '出了十张图', `这期出图 ${report.images.done} 张`);
+  if (Number(report.activity?.nightMessages ?? 0) >= 10) add('night-owl', '🦉', '夜猫子', `凌晨还聊了 ${report.activity.nightMessages} 条`);
+  if (lifetime.firstMessageAt) add('since', '⏳', '陪伴时长', `从 ${String(lifetime.firstMessageAt).slice(0, 10)} 开始`);
+  return out;
+}
+
 export function formatTokens(value) {
   const amount = num(value);
   if (Math.abs(amount) >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M`;
@@ -211,7 +310,7 @@ export function buildCommentary(report = {}) {
 }
 
 /** 原始聚合 → 报告对象。raw 缺字段也能跑（新装、没数据时）。 */
-export function buildReport(raw = {}, meta = normalisePeriod()) {
+export function buildReport(raw = {}, meta = normalisePeriod(), extras = {}) {
   const usage = raw.usage ?? {};
   const activity = raw.activity ?? {};
   const creation = raw.creation ?? {};
@@ -236,6 +335,7 @@ export function buildReport(raw = {}, meta = normalisePeriod()) {
       name: row.name ?? (row.characterId ? '（已删除的卡）' : '（未归属）'),
       avatarAssetId: row.avatarAssetId ?? null,
       coverAssetId: row.coverAssetId ?? null,
+      tags: Array.isArray(row.tags) ? row.tags : [],
       turns: num(row.turns),
       tokens: num(row.tokens),
       cost: num(row.cost),
@@ -247,6 +347,7 @@ export function buildReport(raw = {}, meta = normalisePeriod()) {
     .map((row) => ({ model: row.model ?? '（未记录）', turns: num(row.turns), tokens: num(row.tokens), cost: num(row.cost) }))
     .sort((left, right) => right.tokens - left.tokens)
     .slice(0, 8);
+  const wordCloud = buildWordCloud(topCharacters);
 
   const mergedDays = mergeDayRows(activity.byDay, usage.byDay);
   const byDay = buildSeries(mergedDays, meta);
@@ -307,7 +408,30 @@ export function buildReport(raw = {}, meta = normalisePeriod()) {
     cacheHitRate: usageTotals.promptTokens
       ? Math.round((usageTotals.cachedTokens / usageTotals.promptTokens) * 1000) / 10
       : 0,
+    wordCloud,
+    // 这几项是"感情向"的：词云、新老朋友、徽章、环比、重生、陪伴时长、演出解锁
+    lifelines: classifyLifelines({
+      current: raw.lifelines,
+      previous: raw.previousLifelines,
+      allTime: extras.allTimeLifelines ?? [],
+      from: meta.from,
+      to: meta.to,
+    }),
+    regenerations: num(raw.regenerations?.extra),
+    companion: {
+      seconds: num(raw.companion?.seconds),
+      sessions: num(raw.companion?.sessions),
+      estimated: true,
+      gapMinutes: num(raw.companion?.gapMinutes) || 30,
+    },
+    unlocks: {
+      endings: num(raw.unlocks?.endings),
+      cg: num(raw.unlocks?.cg),
+      routes: num(raw.unlocks?.routes),
+    },
   };
+  report.compare = buildCompare(report.headline, extras.previous ?? null, extras.previousLabel ?? '上一期');
+  report.badges = buildBadges(report, extras.lifetime ?? {});
   report.commentary = buildCommentary(report);
   return report;
 }

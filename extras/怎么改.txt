@@ -1,0 +1,92 @@
+========================================
+ Silver Tavern 0.5.1 · 源代码
+========================================
+
+这个文件夹是完整的源码。压缩包里的 SilverTavern.exe 就是用它打出来的
+（同一份代码，没有藏着掖着）。
+
+
+一、怎么跑起来
+--------------
+  Windows / Linux / macOS / Android(Termux) 都一样：
+
+  1) 装 Node.js 24 或更高  ——  https://nodejs.org
+     这个项目零第三方依赖：不用 npm install，不用构建，不用打包工具。
+     （数据库用的是 Node 自带的 node:sqlite，所以版本必须 ≥ 24。）
+
+  2) 在这个文件夹里执行：
+
+         node server/index.mjs
+
+  3) 浏览器打开：  http://127.0.0.1:8788
+
+  数据默认写在 ./data 。想换地方就设环境变量或加参数：
+
+         set TAVERN_DATA_DIR=D:\SilverTavern-Data   （Windows 命令行）
+         node server/index.mjs --data-dir /path/to/data
+
+  其它常用参数：
+         --multi-user        多用户模式（一人一个账号、一个数据目录）
+         --mcp               当 MCP 服务器用（给 Codex / Claude Code 读）
+         TAVERN_HOST=0.0.0.0 让局域网里的手机 / 别的电脑能连
+         TAVERN_PORT=8788    换端口
+
+
+二、怎么打成那个单文件 exe
+--------------------------
+
+         node scripts/build-exe.mjs --out build/silver-tavern.exe
+
+  用的是 Node 自带的 SEA（单文件可执行）+ postject 注入，产物约 92 MB，
+  不需要装任何东西。打完可以自己跑一遍：
+
+         node work/smoke-exe.mjs build/silver-tavern.exe
+
+
+三、怎么跑测试
+--------------
+
+         node tests/run.mjs        引擎与架构单元测试
+         node tests/api-test.mjs   HTTP 端到端（会自己起一个临时服务）
+
+  这两条不联网、不写你的正式数据目录，随便跑。
+
+
+四、代码怎么分
+--------------
+  core/      纯逻辑层 —— 写卡 / 世界书 / 提示词 / 记忆 / 对话 / 群聊 /
+             演出 / ComfyUI / 账户 / 备份…… 这一层不碰 HTTP、不碰文件，
+             所以好测。想改玩法基本都在这里。
+  server/    HTTP 路由、数据库（node:sqlite，零依赖）、各家模型适配器、
+             接口模块、打包入口。
+  web/       前端：纯 ESM + 原生 DOM，没有构建步骤，改完刷新就生效。
+  scripts/   打包脚本（build-exe.mjs = 单文件 exe，bundle.mjs = 打包 core+server）。
+  tests/     单元测试与端到端测试。
+  docs/      说明文档，见下。
+
+
+五、动手之前建议先看这两份
+--------------------------
+  docs/ARCHITECTURE.md   分层、"什么代码该放哪"、每块功能落在哪个文件
+  docs/SECURITY.md       信任边界、多用户隔离、以及"哪些是有意不做的取舍"
+
+  另外：docs/功能蓝图.txt 是需求清单，docs/待办清单.txt 是还没做的部分。
+
+
+六、许可证（改完要发布的话，这条得看）
+--------------------------------------
+  本项目以 AGPL-3.0 发布（完整条款见 LICENSE）。
+
+  源码里有一部分是从 SillyTavern 移植 / 改编的，逐条登记在 NOTICE.md。
+
+  你可以随便改、自己用。但如果你改完再发布出去（尤其是放到网上给别人用），
+  按 AGPL-3.0 的要求，你需要：
+    · 保留 LICENSE 和 NOTICE.md（版权与来源说明）；
+    · 把你自己改的那份代码也以 AGPL-3.0 开源出来。
+
+  自己私下用不受这个约束。
+
+
+----------------------------------------
+版本：0.5.1（内测）
+----------------------------------------

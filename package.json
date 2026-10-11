@@ -15,6 +15,7 @@
     "test:api": "node tests/api-test.mjs",
     "test:all": "node tests/run.mjs && node tests/api-test.mjs",
     "bundle": "node scripts/bundle.mjs",
-    "build:exe": "node scripts/build-exe.mjs"
+    "build:exe": "node scripts/build-exe.mjs",
+    "build:pkg": "node scripts/package-release.mjs"
   }
 }

@@ -16,6 +16,9 @@
 > [Discussions](https://github.com/chino142/galstage/discussions)。
 > **PR 不收**：想改、想加功能，fork 一份自己改（代码是纯 ESM、零依赖、没有构建步骤，
 > 改完刷新就能看到效果）；只想加功能不想动核心代码，可以写插件，见 [`docs/PLUGINS.md`](docs/PLUGINS.md)。
+>
+> **作者的角色**：只提供软件，不提供任何内容，也不参与任何人的部署与运营 ——
+> 谁拿它做了什么、生成了什么、传给了谁，后果自负。
 
 ![演出层：底部对话框 + 名字牌 + 立绘站位 + 快速菜单](docs/screenshots/performance.png)
 

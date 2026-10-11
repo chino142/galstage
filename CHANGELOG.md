@@ -9,6 +9,10 @@
   `input_tokens` / `output_tokens` 挑出来归一化，`cache_read_input_tokens` 被扔在路上了 ——
   所以走这条路的缓存命中会记成 0。现在整份 usage 原样归一，三家（OpenAI / Anthropic / Gemini）的
   缓存字段都留得住。（流式那条路本来就是好的。）
+- **DeepSeek 的缓存字段以前没认**：它跟 OpenAI 不一样，用的是自己的
+  `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`（官网 kv_cache 文档里没有
+  `prompt_tokens_details`）。所以用 DeepSeek 时，官网上有缓存命中、这边一直是 0。现在两个
+  归一化函数都认这个字段。
 - **统计里把缓存摆出来**：以前只有「花费与统计」顶部的「缓存节省」和报告页提到缓存，
   按天 / 按模型 / 按对话 / 按角色的表只有"总 token"。现在每张表都有**缓存命中**一列
   （带占输入的比例，提供方没上报就是「—」）；对话页那一行也补了「缓存命中 N，占输入 X%」，

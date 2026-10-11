@@ -6,6 +6,8 @@
  * 缓存字段，方便以后提供方把缓存命中一起报上来）：
  *   OpenAI      prompt_tokens / completion_tokens / total_tokens
  *               prompt_tokens_details.cached_tokens
+ *   DeepSeek    自己的两个字段：prompt_cache_hit_tokens / prompt_cache_miss_tokens
+ *               （官网文档里没有 prompt_tokens_details，所以必须单独认这两个）
  *   Anthropic   input_tokens / output_tokens / cache_read_input_tokens
  *   Gemini      promptTokenCount / candidatesTokenCount / totalTokenCount
  *               cachedContentTokenCount
@@ -24,6 +26,7 @@ export function normaliseUsage(usage = {}) {
     source.cachedTokens ??
       source.cacheReadTokens ??
       source.prompt_tokens_details?.cached_tokens ??
+      source.prompt_cache_hit_tokens ??
       source.cache_read_input_tokens ??
       source.cachedContentTokenCount ??
       source.input_tokens_details?.cached_tokens,

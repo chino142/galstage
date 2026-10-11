@@ -3284,6 +3284,8 @@ test('工具箱：用量归一化、缓存节省、预估对比', () => {
   });
   const openai = normaliseUsage({ prompt_tokens: 50, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 30 } });
   assert.equal(openai.cachedTokens, 30);
+  // DeepSeek 的字段名不一样，得单独认（官网 kv_cache 文档）
+  assert.equal(normaliseUsage({ prompt_tokens: 50, completion_tokens: 1, prompt_cache_hit_tokens: 30 }).cachedTokens, 30);
   assert.equal(normaliseUsage({ promptTokenCount: 7, candidatesTokenCount: 3, totalTokenCount: 10 }).totalTokens, 10);
   assert.deepEqual(normaliseUsage(null), { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 });
 
@@ -6641,6 +6643,10 @@ test('适配层：用量里的缓存命中字段不能在归一化时丢掉', ()
   // Gemini 系
   const gemini = normaliseProviderUsage({ promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120, cachedContentTokenCount: 64 });
   assert.equal(gemini.cachedTokens, 64);
+  // DeepSeek：它用的是自己的字段名（官网 kv_cache 文档里没有 prompt_tokens_details）
+  const deepseek = normaliseProviderUsage({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_cache_hit_tokens: 64, prompt_cache_miss_tokens: 36 });
+  assert.equal(deepseek.cachedTokens, 64, 'DeepSeek 的 prompt_cache_hit_tokens 要认');
+  assert.equal(deepseek.promptTokens, 100);
   // 已归一化过的对象再来一遍也不能变味
   const again = normaliseProviderUsage({ cachedTokens: 64, promptTokens: 100, completionTokens: 20, totalTokens: 120 });
   assert.equal(again.cachedTokens, 64);

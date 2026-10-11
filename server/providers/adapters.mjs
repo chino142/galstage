@@ -194,6 +194,7 @@ export function normaliseUsage(usage = {}) {
       usage.cachedTokens ??
       usage.cacheReadTokens ??
       usage.prompt_tokens_details?.cached_tokens ??
+      usage.prompt_cache_hit_tokens ??
       usage.cache_read_input_tokens ??
       usage.cachedContentTokenCount ??
       usage.input_tokens_details?.cached_tokens ??

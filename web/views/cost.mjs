@@ -29,6 +29,14 @@ function percentText(delta) {
   return `${sign}${delta.percent}%`;
 }
 
+/** 缓存命中：没上报就给个破折号，别写 0 让人以为"缓存没生效"和"提供方没报"是一回事。 */
+function cachedText(row) {
+  const cached = Number(row?.cachedTokens ?? 0);
+  if (!cached) return '—';
+  const prompt = Number(row?.promptTokens ?? 0);
+  return prompt ? `${tokens(cached)}（${Math.round((cached / prompt) * 100)}%）` : tokens(cached);
+}
+
 export function createCostView(module) {
   const el = h('div', { class: 'view' });
   const summaryHost = h('div', {});
@@ -54,6 +62,7 @@ export function createCostView(module) {
 
   function renderSummary(summary) {
     const total = summary.totals ?? {};
+    const currency = summary.pricing?.[0]?.currency ?? 'CNY';
     summaryHost.replaceChildren(
       panel(
         '总览',
@@ -62,8 +71,11 @@ export function createCostView(module) {
           ['轮数', `${total.turns ?? 0} 轮（其中 ${total.reportedTurns ?? 0} 轮是提供方上报的真实用量）`],
           ['输入 token', tokens(total.promptTokens)],
           ['输出 token', tokens(total.completionTokens)],
-          ['合计花费', money(total.cost, summary.pricing?.[0]?.currency ?? 'CNY')],
+          ['合计花费（按牌价）', money(total.cost, currency)],
           ['缓存节省', total.cachedTokens ? `${money(total.cacheSavings)}（命中 ${tokens(total.cachedTokens)} token）` : '提供方未上报缓存命中'],
+          // 牌价是把缓存命中的输入也按全价算了；实际账单要减掉缓存省下的那部分。
+          // 只在真有缓存命中时才多这一行，免得平时多一个和"合计花费"一样的数。
+          ...(Number(total.cacheSavings ?? 0) > 0 ? [['实际花费（扣掉缓存折扣）', money(Math.max(0, Number(total.cost ?? 0) - Number(total.cacheSavings ?? 0)), currency)]] : []),
           ['未配单价', `${total.unpricedTurns ?? 0} 轮`],
           ['预估 vs 实际（输入）', `${tokens(total.prompt?.estimated)} vs ${tokens(total.prompt?.actual)}（${percentText(total.prompt)}）`],
           ['预估 vs 实际（输出）', `${tokens(total.completion?.estimated)} vs ${tokens(total.completion?.actual)}（${percentText(total.completion)}）`],
@@ -80,8 +92,8 @@ export function createCostView(module) {
         `${byDay.length} 天`,
         byDay.some((row) => row.turns)
           ? table(
-              ['日期', '轮数', 'token', '花费'],
-              byDay.map((row) => [row.day, row.turns, tokens(row.totalTokens), money(row.cost)]),
+              ['日期', '轮数', 'token', '缓存命中', '花费'],
+              byDay.map((row) => [row.day, row.turns, tokens(row.totalTokens), cachedText(row), money(row.cost)]),
             )
           : emptyState({ icon: '📅', title: '还没有用量' }),
       ),
@@ -90,8 +102,8 @@ export function createCostView(module) {
         `${(summary.byModel ?? []).length} 个`,
         (summary.byModel ?? []).length
           ? table(
-              ['模型', '轮数', 'token', '花费', '预估偏差'],
-              summary.byModel.map((row) => [row.model ?? '（未记录）', row.turns, tokens(row.totalTokens), money(row.cost), percentText(row.prompt)]),
+              ['模型', '轮数', 'token', '缓存命中', '花费', '预估偏差'],
+              summary.byModel.map((row) => [row.model ?? '（未记录）', row.turns, tokens(row.totalTokens), cachedText(row), money(row.cost), percentText(row.prompt)]),
             )
           : emptyState({ icon: '🧮', title: '还没有用量' }),
       ),
@@ -101,14 +113,14 @@ export function createCostView(module) {
   function renderChats(chats, characters) {
     const chatTable = (chats ?? []).length
       ? table(
-          ['对话', '轮数', 'token', '花费'],
-          chats.map((row) => [String(row.chatId ?? '（未归属）').slice(0, 12), row.turns, tokens(row.totalTokens), money(row.cost)]),
+          ['对话', '轮数', 'token', '缓存命中', '花费'],
+          chats.map((row) => [String(row.chatId ?? '（未归属）').slice(0, 12), row.turns, tokens(row.totalTokens), cachedText(row), money(row.cost)]),
         )
       : emptyState({ icon: '💬', title: '还没有按对话的用量' });
     const charTable = (characters ?? []).length
       ? table(
-          ['角色', '轮数', 'token', '花费'],
-          characters.map((row) => [String(row.characterId ?? '（未归属）').slice(0, 12), row.turns, tokens(row.totalTokens), money(row.cost)]),
+          ['角色', '轮数', 'token', '缓存命中', '花费'],
+          characters.map((row) => [String(row.characterId ?? '（未归属）').slice(0, 12), row.turns, tokens(row.totalTokens), cachedText(row), money(row.cost)]),
         )
       : emptyState({ icon: '🎭', title: '还没有按角色的用量' });
     breakdownHost.append(panel('按对话', `${(chats ?? []).length} 个`, chatTable), panel('按角色', `${(characters ?? []).length} 个`, charTable));
@@ -252,11 +264,12 @@ export function createCostView(module) {
         `${items.length} 条`,
         items.length
           ? table(
-              ['时间', '模型', '输入', '输出', '花费', '来源'],
+              ['时间', '模型', '输入', '缓存命中', '输出', '花费', '来源'],
               items.map((row) => [
                 String(row.createdAt ?? '').slice(5, 16).replace('T', ' '),
                 row.model ?? '—',
                 row.promptTokens,
+                cachedText(row),
                 row.completionTokens,
                 row.cost === null ? '未配单价' : money(row.cost),
                 row.reported ? '提供方上报' : '估算',

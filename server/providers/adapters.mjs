@@ -183,7 +183,7 @@ export function finaliseToolCalls(entries = [], notes) {
   return calls;
 }
 
-function normaliseUsage(usage = {}) {
+export function normaliseUsage(usage = {}) {
   return {
     promptTokens: usage.prompt_tokens ?? usage.input_tokens ?? 0,
     completionTokens: usage.completion_tokens ?? usage.output_tokens ?? 0,
@@ -479,7 +479,8 @@ async function* streamAnthropic({ baseUrl, apiKey, model, messages = [], system,
     }
     const calls = finaliseToolCalls(toolEntries);
     if (calls.length) yield { type: 'tool_calls', calls };
-    if (data.usage) yield { type: 'usage', usage: normaliseUsage({ input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens }) };
+    // 整份 usage 原样归一：以前只挑了 input/output，把 cache_read_input_tokens 丢在路上了
+    if (data.usage) yield { type: 'usage', usage: normaliseUsage(data.usage) };
     if (data.stop_reason) yield { type: 'finish', reason: data.stop_reason };
     yield { type: 'done' };
     return;

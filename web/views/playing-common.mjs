@@ -390,6 +390,9 @@ export function messageBubble(message, { onAction = null, live = false, showMode
 
   const meta = [];
   if (message.tokens) meta.push(`≈${message.tokens} tok`);
+  // 缓存命中：只在提供方真报了、且大于 0 时显示，免得每条消息都挂个没用的 0
+  const cachedTokens = Number(message.extra?.usage?.cachedTokens ?? 0);
+  if (cachedTokens) meta.push(`缓存 ${cachedTokens}`);
   if (showModel && message.model) meta.push(message.model);
   if (!live) meta.push(formatTime(message.createdAt));
 

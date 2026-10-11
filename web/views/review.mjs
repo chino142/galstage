@@ -501,6 +501,7 @@ export function createReviewView(module) {
         ['合计 token', tokens(usage.totalTokens)],
         ['花费', `¥${money(usage.cost)}`],
         ['缓存节省', usage.cachedTokens ? `¥${money(usage.cacheSavings)}（命中率 ${report.cacheHitRate ?? 0}%）` : '提供方未上报缓存命中'],
+        ...(Number(usage.cacheSavings ?? 0) > 0 ? [['实际花费（扣掉缓存折扣）', `¥${money(Math.max(0, Number(usage.cost ?? 0) - Number(usage.cacheSavings ?? 0)))}`]] : []),
         ['未配单价', `${usage.unpricedTurns ?? 0} 轮`],
       ]),
       h(

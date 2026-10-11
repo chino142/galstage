@@ -657,7 +657,12 @@ export function createChatView(module, ctx) {
       return;
     }
     const usage = lastUsage;
-    costHost.textContent = `上一轮 ≈ ${usage.promptTokens ?? 0} 输入 / ${usage.completionTokens ?? 0} 输出 token · 花费 ${costText(last?.cost ?? null)}`;
+    const cached = Number(usage.cachedTokens ?? 0);
+    const prompt = Number(usage.promptTokens ?? 0);
+    const cacheText = cached
+      ? `（缓存命中 ${cached}${prompt ? `，占输入 ${Math.round((cached / prompt) * 100)}%` : ''}）`
+      : '';
+    costHost.textContent = `上一轮 ≈ ${usage.promptTokens ?? 0} 输入 / ${usage.completionTokens ?? 0} 输出 token${cacheText} · 花费 ${costText(last?.cost ?? null)}`;
   }
 
   function renderThread() {

@@ -200,6 +200,7 @@ import { collectCardFiles, expandCardZip, looksLikeZip } from '../server/cards/s
 import { createTasksStore } from '../server/db/tasks.mjs';
 import { createTasksService } from '../core/tasks/service.mjs';
 import { translateTag, TAG_DICT_SIZE } from '../web/core/tag-i18n.mjs';
+import { normaliseUsage as normaliseProviderUsage } from '../server/providers/adapters.mjs';
 import { previousPeriod, buildCompare, buildWordCloud, classifyLifelines, buildBadges } from '../core/toolbox/review.mjs';
 import { createMcpServer as createTavernMcpServer, MCP_RETURN_MODES } from '../core/mcp/server.mjs';
 import { createZip, readZip } from '../server/toolbox/zip.mjs';
@@ -6625,6 +6626,26 @@ test('报告加分项：环比 / 词云 / 新老朋友 / 徽章都是本地算�
     assert.ok(ids.includes(wanted), `该有徽章 ${wanted}`);
   }
   assert.ok(!ids.includes('turns-1000'), '没到就不给');
+});
+
+test('适配层：用量里的缓存命中字段不能在归一化时丢掉', () => {
+  // OpenAI 系
+  const openai = normaliseProviderUsage({ prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, prompt_tokens_details: { cached_tokens: 64 } });
+  assert.equal(openai.cachedTokens, 64);
+  assert.equal(openai.promptTokens, 100);
+  // Anthropic 系（cache_read_input_tokens）—— 非流式那条路以前只挑 input/output，把缓存丢了
+  const anthropic = normaliseProviderUsage({ input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 64 });
+  assert.equal(anthropic.cachedTokens, 64, 'Anthropic 的 cache_read_input_tokens 要留下来');
+  assert.equal(anthropic.promptTokens, 100);
+  assert.equal(anthropic.completionTokens, 20);
+  // Gemini 系
+  const gemini = normaliseProviderUsage({ promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120, cachedContentTokenCount: 64 });
+  assert.equal(gemini.cachedTokens, 64);
+  // 已归一化过的对象再来一遍也不能变味
+  const again = normaliseProviderUsage({ cachedTokens: 64, promptTokens: 100, completionTokens: 20, totalTokens: 120 });
+  assert.equal(again.cachedTokens, 64);
+  // 没报就是 0，别猜
+  assert.equal(normaliseProviderUsage({ prompt_tokens: 10 }).cachedTokens, 0);
 });
 
 const result = await run();

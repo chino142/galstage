@@ -3277,9 +3277,10 @@ test('工具箱：用量归一化、缓存节省、预估对比', () => {
     cachedTokens: 0,
   });
   assert.deepEqual(normaliseUsage({ input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 8 }), {
-    promptTokens: 10,
+    // Anthropic 的 input_tokens 不含缓存读 / 写，真实输入要加回来（官方文档的 total_input_tokens 公式）
+    promptTokens: 18,
     completionTokens: 5,
-    totalTokens: 15,
+    totalTokens: 23,
     cachedTokens: 8,
   });
   const openai = normaliseUsage({ prompt_tokens: 50, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 30 } });
@@ -6638,8 +6639,12 @@ test('适配层：用量里的缓存命中字段不能在归一化时丢掉', ()
   // Anthropic 系（cache_read_input_tokens）—— 非流式那条路以前只挑 input/output，把缓存丢了
   const anthropic = normaliseProviderUsage({ input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 64 });
   assert.equal(anthropic.cachedTokens, 64, 'Anthropic 的 cache_read_input_tokens 要留下来');
-  assert.equal(anthropic.promptTokens, 100);
+  // Anthropic 的 input_tokens 只算最后一个断点之后那段，真实输入要加上缓存读 / 写（官方文档）
+  assert.equal(anthropic.promptTokens, 164);
   assert.equal(anthropic.completionTokens, 20);
+  const anthropicWrite = normaliseProviderUsage({ input_tokens: 50, output_tokens: 20, cache_read_input_tokens: 100_000, cache_creation_input_tokens: 2_000 });
+  assert.equal(anthropicWrite.promptTokens, 102_050, '缓存写也要算进输入');
+  assert.equal(anthropicWrite.cachedTokens, 100_000);
   // Gemini 系
   const gemini = normaliseProviderUsage({ promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120, cachedContentTokenCount: 64 });
   assert.equal(gemini.cachedTokens, 64);
@@ -6652,6 +6657,10 @@ test('适配层：用量里的缓存命中字段不能在归一化时丢掉', ()
   assert.equal(again.cachedTokens, 64);
   // 没报就是 0，别猜
   assert.equal(normaliseProviderUsage({ prompt_tokens: 10 }).cachedTokens, 0);
+  // 有些中转站把缓存数摊平到了 usage 顶层（cached_tokens），也要认
+  assert.equal(normaliseProviderUsage({ prompt_tokens: 100, completion_tokens: 5, cached_tokens: 64 }).cachedTokens, 64);
+  // GLM 用的是 OpenAI 那套字段（智谱官方文档：usage.prompt_tokens_details.cached_tokens）
+  assert.equal(normaliseProviderUsage({ prompt_tokens: 100, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 64 } }).cachedTokens, 64);
 });
 
 const result = await run();

@@ -19,13 +19,20 @@
 /** 从各家形状里抠出统一的用量。 */
 export function normaliseUsage(usage = {}) {
   const source = usage && typeof usage === 'object' ? usage : {};
-  const promptTokens = num(source.promptTokens ?? source.prompt_tokens ?? source.input_tokens ?? source.promptTokenCount);
+  // Anthropic 的 input_tokens 只算"最后一个缓存断点之后"那一段，缓存读 / 写要加回来才是真实输入：
+  // 官方文档写的是 total_input_tokens = cache_read_input_tokens + cache_creation_input_tokens + input_tokens。
+  // （OpenAI 系和 Gemini 的 prompt_tokens 本来就含缓存那部分，这两个字段不存在，加 0 不影响。）
+  const anthropicRead = num(source.cache_read_input_tokens);
+  const anthropicWritten = num(source.cache_creation_input_tokens);
+  const promptTokens =
+    num(source.promptTokens ?? source.prompt_tokens ?? source.input_tokens ?? source.promptTokenCount) + anthropicRead + anthropicWritten;
   const completionTokens = num(source.completionTokens ?? source.completion_tokens ?? source.output_tokens ?? source.candidatesTokenCount);
   const totalTokens = num(source.totalTokens ?? source.total_tokens ?? source.totalTokenCount) || promptTokens + completionTokens;
   const cachedTokens = num(
     source.cachedTokens ??
       source.cacheReadTokens ??
       source.prompt_tokens_details?.cached_tokens ??
+      source.cached_tokens ??
       source.prompt_cache_hit_tokens ??
       source.cache_read_input_tokens ??
       source.cachedContentTokenCount ??

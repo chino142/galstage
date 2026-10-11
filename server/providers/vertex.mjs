@@ -298,11 +298,14 @@ export async function* streamVertex({ baseUrl, apiKey, model, messages = [], sys
 
 /** Anthropic 的 usage → 我们统一的形状（含缓存命中，Vertex 的 Claude 也会给）。 */
 function anthropicUsage(usage = {}) {
+  // 跟 adapters 一个口径：Anthropic 的 input_tokens 不含缓存读 / 写那两块，要加回来
+  const cached = Number(usage.cache_read_input_tokens) || 0;
+  const written = Number(usage.cache_creation_input_tokens) || 0;
   return {
-    promptTokens: usage.input_tokens ?? 0,
+    promptTokens: (usage.input_tokens ?? 0) + cached + written,
     completionTokens: usage.output_tokens ?? 0,
-    totalTokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
-    cachedTokens: usage.cache_read_input_tokens ?? 0,
+    totalTokens: (usage.input_tokens ?? 0) + cached + written + (usage.output_tokens ?? 0),
+    cachedTokens: cached,
   };
 }
 

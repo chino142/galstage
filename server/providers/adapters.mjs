@@ -184,8 +184,13 @@ export function finaliseToolCalls(entries = [], notes) {
 }
 
 export function normaliseUsage(usage = {}) {
+  // Anthropic 的 input_tokens 只算"最后一个缓存断点之后"那一段，缓存读 / 写要加回来才是真实输入
+  // （官方文档：total_input_tokens = cache_read_input_tokens + cache_creation_input_tokens + input_tokens）。
+  // OpenAI 系（含 DeepSeek / GLM / Kimi…）和 Gemini 的 prompt_tokens 本来就含缓存那部分，这两个字段不存在，加 0 不影响。
+  const anthropicRead = Number(usage.cache_read_input_tokens) > 0 ? Number(usage.cache_read_input_tokens) : 0;
+  const anthropicWritten = Number(usage.cache_creation_input_tokens) > 0 ? Number(usage.cache_creation_input_tokens) : 0;
   return {
-    promptTokens: usage.prompt_tokens ?? usage.input_tokens ?? 0,
+    promptTokens: (usage.prompt_tokens ?? usage.input_tokens ?? 0) + anthropicRead + anthropicWritten,
     completionTokens: usage.completion_tokens ?? usage.output_tokens ?? 0,
     totalTokens: usage.total_tokens ?? 0,
     // 提示词缓存命中（蓝图 3.2「缓存节省」）。这里只做字段透传，不改别的逻辑；
@@ -194,6 +199,7 @@ export function normaliseUsage(usage = {}) {
       usage.cachedTokens ??
       usage.cacheReadTokens ??
       usage.prompt_tokens_details?.cached_tokens ??
+      usage.cached_tokens ??
       usage.prompt_cache_hit_tokens ??
       usage.cache_read_input_tokens ??
       usage.cachedContentTokenCount ??

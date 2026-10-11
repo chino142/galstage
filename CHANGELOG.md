@@ -13,6 +13,13 @@
   `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`（官网 kv_cache 文档里没有
   `prompt_tokens_details`）。所以用 DeepSeek 时，官网上有缓存命中、这边一直是 0。现在两个
   归一化函数都认这个字段。
+- **Claude 的输入 token 以前少算**：Anthropic 文档写的是
+  `total_input_tokens = cache_read_input_tokens + cache_creation_input_tokens + input_tokens`
+  —— `input_tokens` 只算最后一个缓存断点**之后**那一段。我们以前只取 `input_tokens`，
+  所以一旦真的用上缓存（比如 Claude CLI 那条路），输入会被低估、花费也跟着偏低。
+  `openai` / `anthropic` / `vertex` 三条路现在都把缓存读 / 写加回输入。
+- 顺手认了一个常见写法：有些中转站把缓存数摊平到 `usage.cached_tokens`（不在
+  `prompt_tokens_details` 里），现在也读得到。
 - **统计里把缓存摆出来**：以前只有「花费与统计」顶部的「缓存节省」和报告页提到缓存，
   按天 / 按模型 / 按对话 / 按角色的表只有"总 token"。现在每张表都有**缓存命中**一列
   （带占输入的比例，提供方没上报就是「—」）；对话页那一行也补了「缓存命中 N，占输入 X%」，

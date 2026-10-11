@@ -211,10 +211,18 @@ export function createCostStore({ repo }) {
   }
 
   function findPricing(providerId, model = null) {
+    // 「（不限，所有提供方）」那一档的 provider_id 是空串 —— 以前这里只按具体提供方 id 匹配，
+    // 所以那行单价永远用不上。现在按"越具体越优先"排：指定提供方 > 不限提供方，
+    // 指定模型 > 该家的默认价。
+    const pid = providerId ?? '';
+    const want = model ?? '';
     const rows = repo.all(
-      `SELECT * FROM pricing WHERE provider_id = ? AND (model = ? OR model = '') ORDER BY
-         CASE WHEN model = ? THEN 0 ELSE 1 END LIMIT 1`,
-      [providerId ?? '', model ?? '', model ?? ''],
+      `SELECT * FROM pricing
+        WHERE (provider_id = ? OR provider_id = '') AND (model = ? OR model = '')
+        ORDER BY CASE WHEN provider_id = ? THEN 0 ELSE 1 END,
+                 CASE WHEN model = ? THEN 0 ELSE 1 END
+        LIMIT 1`,
+      [pid, want, pid, want],
     );
     return pricingToObject(rows[0]);
   }

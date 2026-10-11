@@ -201,6 +201,7 @@ import { createTasksStore } from '../server/db/tasks.mjs';
 import { createTasksService } from '../core/tasks/service.mjs';
 import { translateTag, TAG_DICT_SIZE } from '../web/core/tag-i18n.mjs';
 import { normaliseUsage as normaliseProviderUsage } from '../server/providers/adapters.mjs';
+import { withAnthropicCache } from '../server/providers/adapters.mjs';
 import { previousPeriod, buildCompare, buildWordCloud, classifyLifelines, buildBadges } from '../core/toolbox/review.mjs';
 import { createMcpServer as createTavernMcpServer, MCP_RETURN_MODES } from '../core/mcp/server.mjs';
 import { createZip, readZip } from '../server/toolbox/zip.mjs';
@@ -3275,6 +3276,7 @@ test('工具箱：用量归一化、缓存节省、预估对比', () => {
     completionTokens: 20,
     totalTokens: 120,
     cachedTokens: 0,
+    cacheWriteTokens: 0,
   });
   assert.deepEqual(normaliseUsage({ input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 8 }), {
     // Anthropic 的 input_tokens 不含缓存读 / 写，真实输入要加回来（官方文档的 total_input_tokens 公式）
@@ -3282,13 +3284,14 @@ test('工具箱：用量归一化、缓存节省、预估对比', () => {
     completionTokens: 5,
     totalTokens: 23,
     cachedTokens: 8,
+    cacheWriteTokens: 0,
   });
   const openai = normaliseUsage({ prompt_tokens: 50, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 30 } });
   assert.equal(openai.cachedTokens, 30);
   // DeepSeek 的字段名不一样，得单独认（官网 kv_cache 文档）
   assert.equal(normaliseUsage({ prompt_tokens: 50, completion_tokens: 1, prompt_cache_hit_tokens: 30 }).cachedTokens, 30);
   assert.equal(normaliseUsage({ promptTokenCount: 7, candidatesTokenCount: 3, totalTokenCount: 10 }).totalTokens, 10);
-  assert.deepEqual(normaliseUsage(null), { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 });
+  assert.deepEqual(normaliseUsage(null), { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0, cacheWriteTokens: 0 });
 
   // 缓存命中：100 万 token、输入价 20 元、缓存一折 → 省 18 元
   assert.equal(cacheSavings({ cachedTokens: 1_000_000, priceIn: 20, discount: 0.1 }), 18);
@@ -3390,6 +3393,11 @@ test('工具箱：花费记账 —— 按对话 / 角色 / 天汇总，预估与
     // 具体模型优先于"这家默认价"
     assert.equal(cost.pricesFor('p1', 'big').priceIn, 10);
     assert.deepEqual(cost.pricesFor('p2', 'small'), { priceIn: 2, priceOut: 8, cacheDiscount: 0.1, currency: 'CNY', source: 'provider' });
+    // 「（不限，所有提供方）」那一档（providerId 空串）也要真的生效，而且输给指定提供方的价
+    const anyPricing = cost.savePricing({ providerId: '', model: '', priceIn: 3, priceOut: 9, cacheDiscount: 0.2 });
+    assert.deepEqual(cost.pricesFor('p3', 'whatever'), { priceIn: 3, priceOut: 9, cacheDiscount: 0.2, currency: 'CNY', source: 'pricing' });
+    assert.equal(cost.pricesFor('p1', 'other').priceIn, 5, '指定提供方的价优先于「不限」');
+    assert.equal(cost.removePricing(anyPricing.id), true, '自己加的行自己清掉，别影响后面的计数');
     assert.equal(cost.listPricing().items.length, 2);
     assert.equal(cost.removePricing(pricing.id), true);
     assert.equal(cost.listPricing().items.length, 1);
@@ -6661,6 +6669,36 @@ test('适配层：用量里的缓存命中字段不能在归一化时丢掉', ()
   assert.equal(normaliseProviderUsage({ prompt_tokens: 100, completion_tokens: 5, cached_tokens: 64 }).cachedTokens, 64);
   // GLM 用的是 OpenAI 那套字段（智谱官方文档：usage.prompt_tokens_details.cached_tokens）
   assert.equal(normaliseProviderUsage({ prompt_tokens: 100, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 64 } }).cachedTokens, 64);
+});
+
+test('Claude 提示词缓存：断点打在哪、缓存写入怎么计费', () => {
+  const turns = [
+    { role: 'user', content: '第一句' },
+    { role: 'assistant', content: '第二句' },
+  ];
+  // 默认开：system 变块数组 + 最后一条消息带 cache_control；前面的消息不动
+  const cached = withAnthropicCache(turns, { system: '你是阿狸。' });
+  assert.deepEqual(cached.system, [{ type: 'text', text: '你是阿狸。', cache_control: { type: 'ephemeral' } }]);
+  assert.deepEqual(cached.turns[1].content, [{ type: 'text', text: '第二句', cache_control: { type: 'ephemeral' } }]);
+  assert.equal(cached.turns[0].content, '第一句');
+  assert.equal(turns[1].content, '第二句', '不能改调用方传进来的数组');
+
+  // 关掉：原样返回（给不认 cache_control 的中转站用）
+  const off = withAnthropicCache(turns, { system: '你是阿狸。', enabled: false });
+  assert.equal(off.system, '你是阿狸。');
+  assert.equal(off.turns[1].content, '第二句');
+  assert.equal(withAnthropicCache(turns, {}).system, '', '没 system 就不塞');
+
+  // 内容本来就是块数组（带图片 / 工具）时，标在最后一块上
+  const blocks = [{ type: 'text', text: '看这张图' }, { type: 'image', source: {} }];
+  const marked = withAnthropicCache([{ role: 'user', content: blocks }], {});
+  assert.equal(marked.turns[0].content[0].cache_control, undefined);
+  assert.deepEqual(marked.turns[0].content[1].cache_control, { type: 'ephemeral' });
+
+  // 缓存写入按 1.25 倍：100 万 token、输入价 20 元 → 基础 20 + 溢价 5 = 25
+  assert.equal(computeCost({ promptTokens: 1_000_000, completionTokens: 0, cacheWriteTokens: 1_000_000 }, { priceIn: 20 }), 25);
+  assert.equal(computeCost({ promptTokens: 1_000_000, completionTokens: 0 }, { priceIn: 20 }), 20, '没有写入就不加价');
+  assert.equal(computeCost({ promptTokens: 0, completionTokens: 0, cacheWriteTokens: 0 }, {}), null, '没单价还是 null');
 });
 
 const result = await run();

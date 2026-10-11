@@ -23,6 +23,7 @@ import {
   readError,
   toAnthropicTurns,
   toGeminiContents,
+  withAnthropicCache,
 } from './adapters.mjs';
 import { applyImagesToMessages } from '../../core/media/vision.mjs';
 import { resolveAuth, withQuery } from './auth.mjs';
@@ -132,7 +133,9 @@ export async function* streamVertex({ baseUrl, apiKey, model, messages = [], sys
     const full = params.streamMode === 'full';
     // 复用 Anthropic 那套 turns 构造：图片（content 块）与工具回合（tool_use / tool_result）都在里面
     const turns = toAnthropicTurns(applyImagesToMessages(messages, 'anthropic'));
-    if (prefill) turns.push({ role: 'assistant', content: prefill });
+    // 跟 Anthropic 那条路一致：prefill 之前打缓存断点（见 adapters.mjs 的 withAnthropicCache）
+    const cached = withAnthropicCache(turns, { system, enabled: params.promptCache !== false });
+    if (prefill) cached.turns.push({ role: 'assistant', content: prefill });
 
     const url = vertexUrl({
       baseUrl,
@@ -150,9 +153,9 @@ export async function* streamVertex({ baseUrl, apiKey, model, messages = [], sys
       body: JSON.stringify({
         anthropic_version: ANTHROPIC_VERTEX_VERSION,
         max_tokens: params.max_tokens ?? maxTokens,
-        messages: turns,
+        messages: cached.turns,
         stream: !full,
-        ...(system ? { system } : {}),
+        ...(cached.system ? { system: cached.system } : {}),
         ...pickNumeric(params, { temperature: 'temperature', top_p: 'top_p', top_k: 'top_k' }),
         ...(params.stop ? { stop_sequences: Array.isArray(params.stop) ? params.stop : [params.stop] } : {}),
         ...anthropicToolPayload(tools, toolChoice),

@@ -38,7 +38,9 @@ export function normaliseUsage(usage = {}) {
       source.cachedContentTokenCount ??
       source.input_tokens_details?.cached_tokens,
   );
-  return { promptTokens, completionTokens, totalTokens, cachedTokens };
+  // 写进缓存的量（Anthropic 的 cache_creation_input_tokens）：算钱时要按倍率补差价
+  const cacheWriteTokens = num(source.cache_creation_input_tokens ?? source.cacheWriteTokens ?? source.cache_write_tokens);
+  return { promptTokens, completionTokens, totalTokens, cachedTokens, cacheWriteTokens };
 }
 
 function num(value) {

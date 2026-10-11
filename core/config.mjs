@@ -260,6 +260,17 @@ export const SETTINGS_SCHEMA = [
       + '角色就不会每次都像第一次见面。只算这个角色说过的话，不花额外 token（就一句话）。',
   },
   {
+    key: 'chat.promptCache',
+    type: 'boolean',
+    default: true,
+    group: '对话',
+    label: 'Claude 提示词缓存',
+    help: '只有走 Anthropic（Claude）那套接口时有用：给 system 和最后一条消息打缓存断点，'
+      + '下一轮前缀没变就直接命中，命中部分按 1 折计费（写入按 1.25 倍）。'
+      + 'OpenAI / DeepSeek / GLM / Gemini 是服务端自己缓存的，不受这个开关影响。'
+      + '要是某个中转站不认 cache_control 这个字段，把它关掉即可。',
+  },
+  {
     key: 'chat.contextBudget',
     type: 'number',
     minimum: 0,

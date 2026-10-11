@@ -43,6 +43,14 @@ export function computeCost(usage, prices = {}) {
   if (!Number.isFinite(priceIn) && !Number.isFinite(priceOut)) return null;
   const prompt = Number(usage.promptTokens ?? 0);
   const completion = Number(usage.completionTokens ?? 0);
-  const cost = (Number.isFinite(priceIn) ? (prompt / 1_000_000) * priceIn : 0) + (Number.isFinite(priceOut) ? (completion / 1_000_000) * priceOut : 0);
+  // 写进缓存的那部分按倍率计费（Anthropic 是 1.25 倍，别的家没这个字段）。
+  // promptTokens 里已经按 1 倍算过一遍了，所以这里只补差价。
+  const written = Number(usage.cacheWriteTokens ?? 0);
+  const multiplier = Number.isFinite(Number(prices.cacheWriteMultiplier)) ? Number(prices.cacheWriteMultiplier) : 1.25;
+  const writePremium = written > 0 && Number.isFinite(priceIn) ? (written / 1_000_000) * priceIn * (multiplier - 1) : 0;
+  const cost =
+    (Number.isFinite(priceIn) ? (prompt / 1_000_000) * priceIn : 0) +
+    (Number.isFinite(priceOut) ? (completion / 1_000_000) * priceOut : 0) +
+    writePremium;
   return Number(cost.toFixed(6));
 }

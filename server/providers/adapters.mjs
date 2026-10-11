@@ -205,7 +205,35 @@ export function normaliseUsage(usage = {}) {
       usage.cachedContentTokenCount ??
       usage.input_tokens_details?.cached_tokens ??
       0,
+    // 写进缓存的那部分（Anthropic 的 cache_creation_input_tokens）：按 1.25 倍计费，
+    // 单独记一下，算钱的时候要加这个溢价。
+    cacheWriteTokens: Number(usage.cache_creation_input_tokens) > 0 ? Number(usage.cache_creation_input_tokens) : 0,
   };
+}
+
+/**
+ * Anthropic 的 prompt caching：给「最后一条消息」打个缓存断点。
+ *
+ * 这一轮把到这儿为止的前缀写进缓存（写按 1.25 倍计费），下一轮前缀没变就直接命中
+ * （读只要 1 折）。断点最多 4 个，这里只用 2 个：system 一个 + 最后一条消息一个。
+ * 短于模型要求的最小长度时 Anthropic 会静默不缓存，不会报错，所以不用自己判断长度。
+ *
+ * `promptCache: false` 可以关掉 —— 有些中转站 / 转换代理不认 `cache_control` 这个字段。
+ */
+export function withAnthropicCache(turns = [], { system = '', enabled = true } = {}) {
+  if (!enabled) return { turns, system };
+  const copy = turns.map((turn) => ({ ...turn }));
+  const last = copy[copy.length - 1];
+  if (last) {
+    const mark = { cache_control: { type: 'ephemeral' } };
+    if (typeof last.content === 'string') {
+      last.content = [{ type: 'text', text: last.content, ...mark }];
+    } else if (Array.isArray(last.content) && last.content.length) {
+      last.content = last.content.map((block, index) => (index === last.content.length - 1 ? { ...block, ...mark } : { ...block }));
+    }
+  }
+  const cachedSystem = system ? [{ type: 'text', text: String(system), cache_control: { type: 'ephemeral' } }] : system;
+  return { turns: copy, system: cachedSystem };
 }
 
 export function toGeminiContents(messages = []) {
@@ -444,7 +472,9 @@ export function toAnthropicTurns(messages = []) {
 async function* streamAnthropic({ baseUrl, apiKey, model, messages = [], system, params = {}, maxTokens = 1024, signal, extraHeaders = {}, prefill = '', authStyle, headers = {}, extraBody = {}, tools = null, toolChoice = null }) {
   // Anthropic 的图片是 content 块数组里的 image/source。
   const turns = toAnthropicTurns(applyImagesToMessages(messages, 'anthropic'));
-  if (prefill) turns.push({ role: 'assistant', content: prefill });
+  // 缓存断点要在 prefill 之前打：prefill 每轮都不一样，标在它上面等于白写
+  const cached = withAnthropicCache(turns, { system, enabled: params.promptCache !== false });
+  if (prefill) cached.turns.push({ role: 'assistant', content: prefill });
 
   const toolPayload = anthropicToolPayload(tools, toolChoice);
   const auth = resolveAuth(authStyle ?? 'x-api-key', apiKey);
@@ -461,9 +491,9 @@ async function* streamAnthropic({ baseUrl, apiKey, model, messages = [], system,
     body: JSON.stringify({
       model,
       max_tokens: params.max_tokens ?? maxTokens,
-      messages: turns,
+      messages: cached.turns,
       stream: params.streamMode !== 'full',
-      ...(system ? { system } : {}),
+      ...(cached.system ? { system: cached.system } : {}),
       ...pickParams(params, adapterParamMap('anthropic')),
       ...(params.stop ? { stop_sequences: Array.isArray(params.stop) ? params.stop : [params.stop] } : {}),
       ...toolPayload,

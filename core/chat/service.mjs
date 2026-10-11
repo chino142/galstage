@@ -586,7 +586,16 @@ async function* generateTurn(ctx, { chat, member, kind = 'reply', input = {} }) 
         system: assembled.system,
         messages: transcript.length ? [...assembled.messages, ...transcript] : assembled.messages,
         // 优先级：预设 < 提供方默认（网关里合） < 模型绑定 < 对话设置 < 单次请求
-        params: { ...presetConfig, ...(presetParams ?? {}), ...(resolved.params ?? {}), ...(settings.params ?? {}), ...(input.params ?? {}) },
+        params: {
+          ...presetConfig,
+          // Claude 的提示词缓存开关（设置 → 对话）：关掉就不给 Anthropic 打 cache_control
+          //（有些中转站不认这个字段）。放在最前面，显式写在参数里的仍然以参数为准。
+          ...(ctx.settings?.['chat.promptCache'] === false ? { promptCache: false } : {}),
+          ...(presetParams ?? {}),
+          ...(resolved.params ?? {}),
+          ...(settings.params ?? {}),
+          ...(input.params ?? {}),
+        },
         tools: toolsActive ? toolPlan.tools : null,
         toolChoice: toolsActive ? 'auto' : null,
         signal: input.signal,

@@ -85,6 +85,23 @@ export async function streamPost(path, body, onEvent, { signal } = {}) {
     throw new ApiError(message, { status: response.status });
   }
 
+  const emitFrame = (frame) => {
+    let event = 'message';
+    const dataLines = [];
+    for (const line of frame.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+    }
+    if (!dataLines.length) return;
+    let data = null;
+    try {
+      data = JSON.parse(dataLines.join('\n'));
+    } catch {
+      data = { text: dataLines.join('\n') };
+    }
+    onEvent?.(event, data);
+  };
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -94,22 +111,12 @@ export async function streamPost(path, body, onEvent, { signal } = {}) {
     buffer += decoder.decode(value, { stream: true });
     let index;
     while ((index = buffer.indexOf('\n\n')) >= 0) {
-      const frame = buffer.slice(0, index);
+      emitFrame(buffer.slice(0, index));
       buffer = buffer.slice(index + 2);
-      let event = 'message';
-      const dataLines = [];
-      for (const line of frame.split('\n')) {
-        if (line.startsWith('event:')) event = line.slice(6).trim();
-        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
-      }
-      if (!dataLines.length) continue;
-      let data = null;
-      try {
-        data = JSON.parse(dataLines.join('\n'));
-      } catch {
-        data = { text: dataLines.join('\n') };
-      }
-      onEvent?.(event, data);
     }
   }
+  // 流被掐断时（服务端中途报错 / 网络断）最后那半帧没有收尾的 \n\n，
+  // 以前直接丢掉 —— 于是"最后一条 delta / done"静默消失。这里补一次。
+  buffer += decoder.decode();
+  if (buffer.trim()) emitFrame(buffer);
 }

@@ -638,7 +638,7 @@ export const SETTINGS_SCHEMA = [
     group: '数据',
     label: '更新源地址',
     help: '指向一份 JSON 更新清单（http(s) 或本地文件路径），留空 = 不检查更新。'
-      + '清单格式：{"version":"0.5.1","url":"新 exe 地址","size":字节数,"sha256":"可选校验和","notes":"可选说明"}。',
+      + '清单格式：{"version":"0.7.1","url":"新 exe 地址","size":字节数,"sha256":"hex 校验和（必填，没有就拒绝安装）","notes":"可选说明"}。',
   },
 ];
 

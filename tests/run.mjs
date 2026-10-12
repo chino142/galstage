@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { createHarness } from './harness.mjs';
@@ -3936,6 +3937,57 @@ test('花费：缓存折扣按厂商取默认，不能一律 0.1', () => {
   // 示例价目表里的折扣必须和函数算出来的一致，别两处各写一个数。
   for (const preset of PRICE_PRESETS) {
     assert.equal(preset.cacheDiscount, cacheDiscountFor(preset.model), `${preset.model} 的 cacheDiscount`);
+  }
+});
+
+test('架构断言：core 不许起进程 / 读环境变量，web 不许越出 web/ 去 import core 或 server', () => {
+  const rootDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+  const listSources = (dir) => {
+    const out = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...listSources(full));
+      else if (/\.(mjs|js)$/.test(entry.name)) out.push(full);
+    }
+    return out;
+  };
+
+  const importSpecifiers = (source) => {
+    const out = [];
+    const re = /(?:from\s*|import\s*\(\s*|import\s+)['"]([^'"]+)['"]/g;
+    let match;
+    while ((match = re.exec(source))) out.push(match[1]);
+    return out;
+  };
+
+  // 1) core 是纯逻辑：不许 spawn 进程、不许读环境变量。
+  //    MCP 客户端就是这么漏进来过一次（它 spawn 子进程还转发 process.env），
+  //    后来下沉到 server/mcp/ 改成注入端口 —— 这条断言盯着别再犯。
+  const coreFiles = listSources(path.join(rootDir, 'core'));
+  assert.ok(coreFiles.length > 50, 'core 的文件列表读出来了');
+  for (const file of coreFiles) {
+    const source = readFileSync(file, 'utf8');
+    const rel = path.relative(rootDir, file);
+    assert.ok(!source.includes('node:child_process'), `${rel} 不该用 child_process：那是主机上的动作，放 server/`);
+    assert.ok(!/\bprocess\.env\b/.test(source), `${rel} 不该读环境变量：core 要能脱离运行时单独测`);
+  }
+
+  // 2) web 只认 HTTP 接口：任何相对 import 都不许跑出 web/ 之外。
+  const webRoot = path.join(rootDir, 'web');
+  const webFiles = listSources(webRoot);
+  assert.ok(webFiles.length > 40, 'web 的文件列表读出来了');
+  for (const file of webFiles) {
+    const source = readFileSync(file, 'utf8');
+    const rel = path.relative(rootDir, file);
+    for (const spec of importSpecifiers(source)) {
+      if (!spec.startsWith('.')) continue;
+      const resolved = path.resolve(path.dirname(file), spec);
+      assert.ok(
+        resolved === webRoot || resolved.startsWith(webRoot + path.sep),
+        `${rel} 的 import '${spec}' 跑出了 web/：视图只该通过 HTTP 接口拿数据`,
+      );
+    }
   }
 });
 

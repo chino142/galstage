@@ -13,6 +13,7 @@ import path from 'node:path';
 
 import { createHarness } from './harness.mjs';
 import { createMockComfy } from './fixtures/mock-comfy-server.mjs';
+import { HOST_ACTION_SETTING_KEYS } from '../server/api/_helpers.mjs';
 import { createZip, readZip } from '../server/toolbox/zip.mjs';
 import { startMultiUser, startTavern } from '../server/index.mjs';
 
@@ -4332,6 +4333,28 @@ test('多用户：成员不能加本地 MCP 服务器（主机会启动进程）
 
   // 管理员（主机主人）照旧能配（只配不连，所以不会有进程被拉起来）
   assert.equal((await hostCall(admin, 'POST', '/api/mcp/servers', spec)).status, 201);
+});
+
+test('多用户：成员写「让主机替我做事」的每一项设置都必须 403', async () => {
+  await ensureMultiUser();
+  const admin = cookieJar();
+  assert.equal((await hostCall(admin, 'POST', '/api/auth/login', { name: 'boss', password: 'boss-password' })).status, 200);
+  const probe = 'setting-probe';
+  await hostCall(admin, 'POST', '/api/host/users', { name: probe, password: 'probe-pass-1234', role: 'user' });
+  const member = cookieJar();
+  assert.equal((await hostCall(member, 'POST', '/api/auth/login', { name: probe, password: 'probe-pass-1234' })).status, 200);
+
+  // 数据驱动：以后往 HOST_ACTION_SETTING_KEYS 里加东西，这里自动一起验，
+  // 不会再出现「新加一条设置、忘了加闸」这种静默漏网。
+  assert.ok(HOST_ACTION_SETTING_KEYS.length >= 7, '清单读出来了');
+  for (const key of HOST_ACTION_SETTING_KEYS) {
+    const res = await hostCall(member, 'PUT', '/api/settings', { [key]: 'http://127.0.0.1:1' });
+    assert.equal(res.status, 403, `${key} 对成员必须 403`);
+    assert.equal(res.body.error.code, 'FORBIDDEN');
+  }
+
+  // 管理员（主机主人）照旧能写：拿最无害的一项验证（写回默认值）
+  assert.equal((await hostCall(admin, 'PUT', '/api/settings', { 'net.proxy': '' })).status, 200);
 });
 
 test('多用户：成员不能让主机替他探测内网（代理连通性测试）', async () => {

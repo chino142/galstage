@@ -406,7 +406,8 @@ export const MODULES = [
     summary: '立绘、背景、CG，与剧情联动',
     status: 'partial',
     web: { view: 'imagegen', icon: '🖼️' },
-    api: ['/api/images'],
+    // 出图早就统一走 ComfyUI 那一套了（/api/comfy/*），/api/images/* 是迁移后留下的死桩。
+    api: ['/api/comfy'],
     blueprint: '2.7',
     plan: [
       '立绘 / 背景 / CG 生成并自动入库（已实现，复用 ComfyUI 3.1，不另造一套）',

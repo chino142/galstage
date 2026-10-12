@@ -290,14 +290,16 @@ export function register(router, { engine, logger }) {
   router.put('/api/narration/:chatId/events', async (ctx) => ctx.json(200, narration.saveEventSettings(ctx.params.chatId, (await ctx.body()) ?? {})));
   router.post('/api/narration/:chatId/events/roll', async (ctx) => ctx.json(200, narration.rollEvent(ctx.params.chatId, (await ctx.body()) ?? {})));
 
-  // ---------------------------------------------------------------- 只留接口的部分
+  // ---------------------------------------------------------------- 还没做的部分
+  //
+  // 只留**真的没做**的：语音（TTS / STT）。这三条回 501 是诚实的。
+  //
+  // 以前这里还挂着 /api/performance/* 与 /api/images/* 四条 —— 那两块早就做完了，
+  // 只是换了实现位置（演出层搬到 /api/staging，出图搬到 /api/comfy），前端也一律走新前缀。
+  // 留着它们等于对外宣称"这几条还没实现"，实际是**死路由**：删掉，让它们老老实实 404。
   stubs(router, [
-    ['GET', '/api/performance/:chatId', '演出层状态'],
-    ['POST', '/api/performance/:chatId/export-renpy', '导出 Ren\'Py 工程'],
     ['POST', '/api/speech/speak', '朗读文本'],
     ['POST', '/api/speech/transcribe', '语音转文字'],
     ['GET', '/api/speech/voices', '音色列表'],
-    ['POST', '/api/images/generate', '生成图片'],
-    ['GET', '/api/images/:chatId/gallery', 'CG 相册'],
   ]);
 }

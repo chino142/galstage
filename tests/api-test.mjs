@@ -755,7 +755,7 @@ test('卡内前端：元数据接口可用', async () => {
 
 // ---------- 玩卡区与工具箱 ----------
 
-test('玩卡区接口：空库形状正确，未知对话 404，未实现的演出层 501', async () => {
+test('玩卡区接口：空库形状正确，未知对话 404，没实现的语音才是 501', async () => {
   const chats = await call('/api/chats');
   assert.deepEqual(chats.body.items, []);
 
@@ -776,11 +776,16 @@ test('玩卡区接口：空库形状正确，未知对话 404，未实现的演�
   const directorModes = await call('/api/narration/modes');
   assert.deepEqual(directorModes.body.items.map((item) => item.id), ['narrator', 'director', 'ooc']);
 
-  const performance = await call('/api/performance/x');
-  assert.equal(performance.status, 501);
+  // 以前这两条断言的是 501 —— 那是在钉住**过时**行为：演出层早搬到 /api/staging、
+  // 出图早搬到 /api/comfy，旧前缀只是迁移后忘了删的死桩，已经删掉了，所以现在该 404。
+  const stalePerformance = await call('/api/performance/x');
+  assert.equal(stalePerformance.status, 404);
+  const staleImages = await call('/api/images/generate', { method: 'POST', body: {} });
+  assert.equal(staleImages.status, 404);
 
-  const images = await call('/api/images/generate', { method: 'POST', body: {} });
-  assert.equal(images.status, 501);
+  // 真·还没做的是语音（TTS / STT）：这三条回 501，是诚实的
+  const speech = await call('/api/speech/voices');
+  assert.equal(speech.status, 501);
 });
 
 test('工具箱与平台接口：占位但可枚举', async () => {

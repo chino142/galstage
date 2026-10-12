@@ -5,7 +5,7 @@
 
 import { SETTINGS_SCHEMA } from '../../core/config.mjs';
 import { readSettings, writeSettings, resetSettings } from '../db/settings.mjs';
-import { COMFY_LAUNCH_DENIED, COMFY_LAUNCHER_KEYS, SERVER_COMFY_DENIED, deniesHostActions, deniesServerComfy } from './_helpers.mjs';
+import { HOST_ACTION_DENIED, HOST_ACTION_SETTING_KEYS, SERVER_COMFY_DENIED, deniesHostActions, deniesServerComfy } from './_helpers.mjs';
 import { setProxy } from '../providers/http.mjs';
 import { checkForUpdate, installUpdate } from '../update.mjs';
 import { isSeaRuntime } from '../sea.mjs';
@@ -74,9 +74,11 @@ export function register(router, { engine, repo, logger, dataDir, runtime }) {
     if ((patch ?? {})['comfy.executionMode'] === 'server' && deniesServerComfy(ctx)) {
       return ctx.fail(403, 'FORBIDDEN', SERVER_COMFY_DENIED);
     }
-    // 「让主机执行命令」那几条同样只有管理员能写（ComfyUI 启动托管）
-    if (COMFY_LAUNCHER_KEYS.some((key) => (patch ?? {})[key] !== undefined) && deniesHostActions(ctx)) {
-      return ctx.fail(403, 'FORBIDDEN', COMFY_LAUNCH_DENIED);
+    // 「让主机替我出网 / 替我写文件」的设置项：白名单式默认拒绝。清单在 _helpers.mjs，
+    // 漏一个就是一次跨租户越权（net.proxy / data.backupDir / system.updateUrl 以前就是这么漏的）。
+    const hostActionKeys = HOST_ACTION_SETTING_KEYS.filter((key) => (patch ?? {})[key] !== undefined);
+    if (hostActionKeys.length && deniesHostActions(ctx)) {
+      return ctx.fail(403, 'FORBIDDEN', `${HOST_ACTION_DENIED}（本次涉及：${hostActionKeys.join('、')}）`);
     }
     const next = writeSettings(repo, patch ?? {});
     // 代理改了要立刻生效（不用重启）。
@@ -94,6 +96,8 @@ export function register(router, { engine, repo, logger, dataDir, runtime }) {
 
   // ---- 检查更新 / 自动替换 exe（蓝图 3.2）----
   router.get('/api/system/update', async (ctx) => {
+    // 检查更新会让**主机**去取一个地址（SSRF 原语），更新源又是能被写坏的设置 —— 只给管理员。
+    if (deniesHostActions(ctx)) return ctx.fail(403, 'FORBIDDEN', HOST_ACTION_DENIED);
     const url = readSettings(repo)['system.updateUrl'] ?? '';
     const result = await checkForUpdate({ url, current: engine.version });
     return ctx.json(200, {
@@ -104,6 +108,8 @@ export function register(router, { engine, repo, logger, dataDir, runtime }) {
   });
 
   router.post('/api/system/update/install', async (ctx) => {
+    // 这条路由会下载一个文件、写进文件系统、必要时覆盖 exe 并重启 —— 只给管理员。
+    if (deniesHostActions(ctx)) return ctx.fail(403, 'FORBIDDEN', HOST_ACTION_DENIED);
     const url = readSettings(repo)['system.updateUrl'] ?? '';
     let result;
     try {

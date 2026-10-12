@@ -1,7 +1,7 @@
 /**
  * 检查更新 / 自动替换 exe（蓝图 3.2「使用体验」里的自动更新）。
  * 更新源是一份 JSON 清单（http(s) 或本地文件），格式：
- *   { "version": "0.5.1", "url": "<新 exe 的地址或本地路径>", "size": 123456, "sha256": "hex（可选）", "notes": "更新说明（可选）" }
+ *   { "version": "0.5.1", "url": "<新 exe 的地址或本地路径>", "size": 123456, "sha256": "hex（必填）", "notes": "更新说明（可选）" }
  * 为什么分成"检查"和"安装"两步：检查只读清单、比版本；安装要下载整包、校验、
  * 再拉起一个独立进程替自己换文件 —— 这两步失败代价差很多，界面也各给一个按钮。
  * 自替换只发生在跑在单文件 exe（Node SEA）里：正在运行的 exe 被 Windows 锁着，
@@ -61,6 +61,14 @@ function sha256Of(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
+/**
+ * 版本号来自外部清单，会被拼进临时文件名 —— 只留安全字符。
+ * 不这样做的话，`version: "9/../../../../Users/Public/evil"` 会把文件写到数据目录外面。
+ */
+function safeFileNamePart(value) {
+  return String(value ?? '').replace(/[^0-9A-Za-z._-]/g, '_').slice(0, 64) || 'update';
+}
+
 async function downloadExe(sourceUrl, tempFile) {
   if (isHttpUrl(sourceUrl)) {
     const response = await fetch(sourceUrl, { signal: AbortSignal.timeout(300000), redirect: 'follow' });
@@ -111,9 +119,12 @@ export async function installUpdate({ url, current, currentExe, packaged = false
   const latest = String(manifest?.version ?? '').trim();
   if (!latest) throw new Error('更新清单里没有 version');
   if (compareVersions(latest, current) <= 0) throw new Error('已经是最新版了');
+  if (!manifest.sha256) {
+    throw new Error('更新清单没有 sha256：拒绝安装（没有校验和就没法确认下载到的 exe 没被换掉）');
+  }
 
   const sourceUrl = resolveSourceUrl(manifest);
-  const tempFile = path.join(dataDir ?? os.tmpdir(), 'update', `silver-tavern-${latest}.exe`);
+  const tempFile = path.join(dataDir ?? os.tmpdir(), 'update', `silver-tavern-${safeFileNamePart(latest)}.exe`);
   const downloaded = await downloadExe(sourceUrl, tempFile);
 
   if (manifest.size && Math.abs(Number(manifest.size) - downloaded.size) > 4) {

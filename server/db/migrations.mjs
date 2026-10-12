@@ -143,6 +143,29 @@ export function currentVersion(db) {
   return row?.version ?? 0;
 }
 
+/**
+ * 已经发布过的迁移不许改，但 `ALTER TABLE ... ADD COLUMN` 没有 `IF NOT EXISTS`：
+ * 在"结构已经是最新"的库上重放同一条迁移（迁移记录被清掉、或从半截备份里恢复）会直接炸
+ * "duplicate column name"。所以跑之前先看一眼那一列在不在，在就跳过 ——
+ * 这样不动 V5 的 SQL，也能让它可重放。
+ *
+ * 只对 ALTER ADD COLUMN 生效，其余语句照旧执行（`CREATE TABLE IF NOT EXISTS` 本来就幂等）。
+ */
+const ADD_COLUMN_RE =
+  /^\s*ALTER\s+TABLE\s+["'`]?([A-Za-z_][A-Za-z0-9_]*)["'`]?\s+ADD\s+COLUMN\s+["'`]?([A-Za-z_][A-Za-z0-9_]*)["'`]?/i;
+
+function alreadyHasColumn(db, sql) {
+  const match = ADD_COLUMN_RE.exec(String(sql ?? ''));
+  if (!match) return false;
+  try {
+    const columns = db.prepare(`PRAGMA table_info(${match[1]})`).all();
+    return columns.some((row) => String(row.name).toLowerCase() === match[2].toLowerCase());
+  } catch {
+    // 表还不存在之类的情况：交给正常路径去建
+    return false;
+  }
+}
+
 export function runMigrations(db, logger = console) {
   ensureMigrationsTable(db);
   const applied = [];
@@ -154,7 +177,10 @@ export function runMigrations(db, logger = console) {
     if (done.has(migration.version)) continue;
     db.exec('BEGIN');
     try {
-      for (const sql of migration.statements) db.exec(sql);
+      for (const sql of migration.statements) {
+        if (alreadyHasColumn(db, sql)) continue;
+        db.exec(sql);
+      }
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
         migration.version,
         migration.name,

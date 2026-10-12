@@ -3946,11 +3946,28 @@ test('工具箱：老库升版本时，跑迁移前会自动留一份备份', ()
       assert.match(migrationBackup.label, /迁移前/);
       assert.ok(migrationBackup.bytes > 0);
       assert.ok(migrationBackup.schemaVersion < second.latestSchemaVersion, '快照要记下老版本号');
+
+      // 整体重放：把迁移记录清空，让 22 条迁移在"结构已经是最新"的库上再跑一遍。
+      // 这是"迁移必须可重放"那条规矩的看门人 —— `ALTER TABLE ADD COLUMN` 没有
+      // IF NOT EXISTS，V5 就是靠 runMigrations 里的列存在性自检才没炸的。
+      second.db.exec('DELETE FROM schema_migrations');
     } finally {
       second.close();
     }
+
+    const replay = openDatabase({ dataDir: dir, logger: silent });
+    try {
+      assert.equal(replay.schemaVersion, replay.latestSchemaVersion, '迁移记录清空后要能整体重放，不能炸在 ALTER TABLE 上');
+    } finally {
+      replay.close();
+    }
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // Windows 上临时目录偶尔被占用（杀软 / 索引器扫刚写的备份），清理失败不该
+      // 变成用例结论 —— 尤其不该把真正的断言错误盖成一句 EPERM。
+    }
   }
 });
 

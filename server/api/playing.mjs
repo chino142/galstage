@@ -58,9 +58,11 @@ export function register(router, { engine, logger }) {
     const sse = openSse(ctx);
     return (async () => {
       try {
+        // 这里**不要** break：跳出 for await 会调用生成器的 return()，把还没跑完的尾巴
+        // （落库、记账、X 光快照）一起丢掉 —— 生成中途报错时整轮内容就蒸发在这一行上。
+        // 生成器自己会在"一个字都没收到"时收场，所以让它自己跑完就行。
         for await (const event of run()) {
           sse.send(event.type, event);
-          if (event.type === 'error') break;
         }
       } catch (err) {
         sse.send('error', { code: err?.code ?? 'INTERNAL_ERROR', message: String(err?.message ?? err) });

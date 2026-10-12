@@ -662,8 +662,18 @@ async function* generateTurn(ctx, { chat, member, kind = 'reply', input = {} }) 
       }
     }
   } catch (err) {
-    yield { type: 'error', code: err?.code ?? 'PROVIDER_ERROR', message: String(err?.message ?? err) };
-    return;
+    // 出错不代表这一轮要整段蒸发：已经收到的 partial 正文、usage、X 光快照都还有价值
+    // （至少能看到断在哪、这一轮花了多少）。所以只要收到过东西就继续往下走，
+    // 让下面那段落库 / 记账 / 状态块解析把它存住。
+    // 一个字都没收到时才收场 —— 那种情况落库只会留一条空气泡，什么也没留下。
+    const partial = String(raw ?? '').trim();
+    yield {
+      type: 'error',
+      code: err?.code ?? 'PROVIDER_ERROR',
+      message: String(err?.message ?? err),
+      recoverable: Boolean(partial),
+    };
+    if (!partial) return;
   }
 
   // 预设的 OutputPreprocessing 只认标记之后的内容（作者用它挡掉模型开头那段碎碎念）。

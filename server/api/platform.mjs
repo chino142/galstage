@@ -232,9 +232,15 @@ export function register(router, { engine, repo, models, masterKey, assets }) {
     const store = thumbsFor(repo);
     const found = store?.get(ctx.params.id);
     if (!found) return ctx.fail(404, 'NOT_FOUND', `这张素材还没有缩略图：${ctx.params.id}`);
+    // 和 /file 一样收口：缩略图的 mime 是上传时客户端给的，直接当响应类型回出去，
+    // 一个 text/html 的"缩略图"打开就是同源 XSS。
+    const stored = String(found.mime ?? '');
+    const inline = INLINE_ASSET_TYPES.test(stored);
     ctx.res.setHeader('X-Content-Type-Options', 'nosniff');
+    ctx.res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     ctx.res.setHeader('Cache-Control', 'public, max-age=86400');
-    return ctx.text(200, found.bytes, found.mime || 'image/webp');
+    if (!inline) ctx.res.setHeader('Content-Disposition', 'attachment');
+    return ctx.text(200, found.bytes, inline ? stored : 'application/octet-stream');
   });
 
   router.post('/api/assets/:id/thumbnail', async (ctx) => {

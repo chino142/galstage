@@ -402,6 +402,9 @@ export function createChatView(module, ctx) {
    */
   async function refreshModules() {
     for (const sandbox of moduleSandboxes) sandbox.clear();
+    // 重画之前先把上一批沙箱收掉：以前只是把数组清空，挂在 window 上的 message 监听
+    // 还在，闭包还攥着各自的 frame / methods —— 每重画一次就攒一批。
+    for (const old of moduleSandboxes) old.destroy();
     moduleSandboxes.length = 0;
     moduleHost.replaceChildren();
     moduleStyle.textContent = '';
@@ -1939,5 +1942,14 @@ export function createChatView(module, ctx) {
   }
 
   // 沙箱的 message 监听挂在 window 上，视图换掉必须回收，否则每切一次就多一份。
-  return { el, mount, unmount: () => sandbox.destroy() };
+  // 模块面板那批也要一起收（它们和卡内界面用的是同一个 createCardSandbox）。
+  return {
+    el,
+    mount,
+    unmount: () => {
+      sandbox.destroy();
+      for (const item of moduleSandboxes) item.destroy();
+      moduleSandboxes.length = 0;
+    },
+  };
 }

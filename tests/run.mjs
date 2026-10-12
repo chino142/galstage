@@ -3991,6 +3991,44 @@ test('架构断言：core 不许起进程 / 读环境变量，web 不许越出 w
   }
 });
 
+test('架构断言：模块地图声明的每个 api 前缀都真的有路由兜着', () => {
+  const rootDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+  // 模块地图是「全项目要做哪些东西」的唯一清单，它的 api 字段必须指向真实存在的路由 ——
+  // 否则就是 /api/images 那种情况：地图指着一个早就搬走、只剩死桩的前缀。
+  const declared = new Set();
+  const modulesSource = readFileSync(path.join(rootDir, 'core/modules.mjs'), 'utf8');
+  for (const match of modulesSource.matchAll(/api:\s*\[([^\]]*)\]/g)) {
+    for (const item of match[1].matchAll(/'([^']+)'/g)) declared.add(item[1]);
+  }
+  assert.ok(declared.size >= 25, `模块地图声明了 ${declared.size} 条 api 前缀`);
+
+  // 路由一半在 server/api/*.mjs，一半在 server/host.mjs（多用户主机的 /api/auth 之类）
+  const sources = [];
+  const apiDir = path.join(rootDir, 'server/api');
+  for (const entry of readdirSync(apiDir, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.mjs')) sources.push(path.join(apiDir, entry.name));
+  }
+  sources.push(path.join(rootDir, 'server/host.mjs'));
+
+  const routeLiterals = new Set();
+  for (const file of sources) {
+    for (const match of readFileSync(file, 'utf8').matchAll(/\/api\/[A-Za-z0-9_\-/:.]+/g)) {
+      routeLiterals.add(match[0]);
+    }
+  }
+  assert.ok(routeLiterals.size > 200, `扫到 ${routeLiterals.size} 条路由字面量`);
+
+  const missing = [];
+  for (const prefix of declared) {
+    const hit = [...routeLiterals].some(
+      (route) => route === prefix || route.startsWith(`${prefix}/`) || route.startsWith(`${prefix}:`),
+    );
+    if (!hit) missing.push(prefix);
+  }
+  assert.deepEqual(missing, [], `模块地图声明了这些前缀，但没有任何路由兜着：${missing.join(', ')}`);
+});
+
 test('工具箱：老库升版本时，跑迁移前会自动留一份备份', () => {
   const silent = { info() {}, warn() {}, error() {}, debug() {} };
   const dir = mkdtempSync(path.join(process.env.TEMP ?? tmpdir(), 'tavern-migrate-'));

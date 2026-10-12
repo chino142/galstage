@@ -84,6 +84,9 @@ export const HOST_ACTION_SETTING_KEYS = [
 export const HOST_ACTION_DENIED =
   '多用户模式下这几项设置只有管理员能改：它们会让主机替你出网或替你写文件，成员一改就会波及别人。';
 
+export const NET_PROBE_DENIED =
+  '多用户模式下只有管理员能让主机去连接一个地址：这条接口会由主机发起 TCP 连接，拿它扫内网端口 / 探云元数据都是它。要测自己的代理就用管理员账号。';
+
 /**
  * 破坏性操作前自动备份（蓝图 3.2「每次大改动前各留一份」）。
  *

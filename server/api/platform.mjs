@@ -4,7 +4,7 @@
  * 提供方是第一批真正落地的功能：密钥加密存放，列表永远不带明文 key。
  */
 
-import { stubs } from './_helpers.mjs';
+import { NET_PROBE_DENIED, deniesHostActions, stubs } from './_helpers.mjs';
 import { ADAPTERS, PRESETS } from '../providers/catalog.mjs';
 import { AUTH_STYLES, DEFAULT_AUTH_STYLE } from '../providers/auth.mjs';
 import { adapterParamForm, validateAdapterParams } from '../providers/params.mjs';
@@ -270,11 +270,20 @@ export function register(router, { engine, repo, models, masterKey, assets }) {
   router.get('/api/net/proxy', (ctx) => ctx.json(200, proxyStatus()));
 
   router.post('/api/net/proxy/test', async (ctx) => {
+    // 这条路由由**主机**去 net.connect 用户填的 host:port（server/providers/proxy.mjs 的
+    // testProxy），成员拿它就是个内网端口扫描器 —— 能区分开着 / 关着 / 超时，
+    // 够摸出同网段有哪些服务在跑。收成管理员专用。
+    if (deniesHostActions(ctx)) return ctx.fail(403, 'FORBIDDEN', NET_PROBE_DENIED);
     const body = (await ctx.body()) ?? {};
     const target = String(body.proxy ?? '');
     if (!target.trim()) return ctx.fail(400, 'VALIDATION_ERROR', '要先填代理地址');
-    const result = await testProxy(target);
-    return ctx.json(200, result);
+    try {
+      return ctx.json(200, await testProxy(target));
+    } catch (err) {
+      // 连不上是**预期内**的结果（地址写错、代理没开），要如实把原因告诉调用方。
+      // 别让它冒成 500 —— 500 现在按规矩只回固定文案，原因就看不见了。
+      return ctx.json(200, { ok: false, error: String(err?.message ?? err) });
+    }
   });
 
   // ---- 自定义请求体：给懂行的人完全接管发出去的 JSON ----

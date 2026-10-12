@@ -4334,6 +4334,28 @@ test('多用户：成员不能加本地 MCP 服务器（主机会启动进程）
   assert.equal((await hostCall(admin, 'POST', '/api/mcp/servers', spec)).status, 201);
 });
 
+test('多用户：成员不能让主机替他探测内网（代理连通性测试）', async () => {
+  await ensureMultiUser();
+  const admin = cookieJar();
+  assert.equal((await hostCall(admin, 'POST', '/api/auth/login', { name: 'boss', password: 'boss-password' })).status, 200);
+  const probe = 'net-probe-user';
+  await hostCall(admin, 'POST', '/api/host/users', { name: probe, password: 'probe-pass-1234', role: 'user' });
+  const member = cookieJar();
+  assert.equal((await hostCall(member, 'POST', '/api/auth/login', { name: probe, password: 'probe-pass-1234' })).status, 200);
+
+  // 这条路由会让主机去 connect 一个用户填的地址 —— 成员用它就能扫内网。
+  const probed = await hostCall(member, 'POST', '/api/net/proxy/test', { proxy: 'http://127.0.0.1:22' });
+  assert.equal(probed.status, 403);
+  assert.equal(probed.body.error.code, 'FORBIDDEN');
+
+  // 管理员（主机主人）照旧能用，而且连不上要**如实回原因**（200 + ok:false），
+  // 不能冒成 500 —— 500 只回固定文案，原因就丢了。
+  const asAdmin = await hostCall(admin, 'POST', '/api/net/proxy/test', { proxy: 'http://127.0.0.1:1' });
+  assert.equal(asAdmin.status, 200);
+  assert.equal(asAdmin.body.ok, false);
+  assert.match(String(asAdmin.body.error ?? ''), /127\.0\.0\.1|ECONNREFUSED|连不上/i);
+});
+
 test('多用户：登录失败按 IP 限速，伪造的 x-forwarded-for 不算数', async () => {
   await ensureMultiUser();
   // 造一个"攻击者自己的"账号：它能正常登录，但**不该**让 boss 的失败额度被顺带清掉。

@@ -244,5 +244,5 @@ export function createGalgameFrontendView(module, ctx) {
   }
 
   void ctx;
-  return { el, mount };
+  return { el, mount, unmount: () => sandbox.destroy() };
 }

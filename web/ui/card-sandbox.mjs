@@ -183,6 +183,16 @@ export function createCardSandbox({ getChatId, frameHeight = 260 } = {}) {
     host.replaceChildren();
   }
 
+  /**
+   * 收场。**视图换掉时必须调用**：那个 message 监听挂在 window 上，视图被替换后
+   * 它照样活着，闭包还攥着 frame / methods / getChatId 一整套状态 —— 每实例化一个
+   * 沙箱就多一份，切几次视图就攒几份，而且每次 postMessage 都要过一遍。
+   */
+  function destroy() {
+    window.removeEventListener('message', onMessage);
+    clear();
+  }
+
   /** 底部拖动条：按住上下拖 = 手动改高度（改完就不再跟随卡片）。 */
   function wireDrag(handleEl, frameEl) {
     handleEl.addEventListener('pointerdown', (event) => {
@@ -221,6 +231,7 @@ export function createCardSandbox({ getChatId, frameHeight = 260 } = {}) {
     el: host,
     mount,
     clear,
+    destroy,
     notify,
     setHeight,
     followCardHeight,

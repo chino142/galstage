@@ -86,6 +86,7 @@ async function boot() {
   }
 
   let currentModuleId = fallback;
+  let currentView = null;
   let rerender = () => {};
 
   const palette = createCommandPalette({
@@ -201,7 +202,17 @@ async function boot() {
     shell.setHeader({ title: module.title, subtitle: module.summary });
     document.title = `${module.title} · Silver Tavern`;
 
+    // 换视图前先让上一个收场：它可能挂着自己的定时器或全局监听（群聊自动模式、
+    // 卡内沙箱的 message）。以前只是把 DOM 换掉，定时器还照跑 —— 用户切走了，
+    // 模型还在被调、token 还在烧。视图实现 unmount 就调，没实现也不影响切换。
+    try {
+      currentView?.unmount?.();
+    } catch {
+      // 视图自己的收尾失败不该挡住导航
+    }
+
     const view = createView(module, ctx);
+    currentView = view;
     if (view.el?.dataset && !entered.has(module.id)) {
       entered.add(module.id);
       view.el.dataset.enter = 'first';

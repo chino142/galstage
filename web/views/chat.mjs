@@ -1938,5 +1938,6 @@ export function createChatView(module, ctx) {
     bind('search', () => searchInput.focus?.());
   }
 
-  return { el, mount };
+  // 沙箱的 message 监听挂在 window 上，视图换掉必须回收，否则每切一次就多一份。
+  return { el, mount, unmount: () => sandbox.destroy() };
 }

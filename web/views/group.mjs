@@ -164,6 +164,12 @@ export function createGroupView(module, ctx) {
     stopAuto();
     const delay = Math.max(1, chat.autoModeDelay ?? 5) * 1000;
     autoTimer = setInterval(async () => {
+      // 切走视图之后这个定时器还在跑：它会继续调模型、继续写库、继续烧 token。
+      // 视图已经被摘掉时就自己收场（不依赖调用方记得调 unmount）。
+      if (!el.isConnected) {
+        stopAuto();
+        return;
+      }
       try {
         const events = await streamTurn(`/api/chats/${chat.id}/send`, { text: '' });
         if (events.some((event) => event.event === 'start')) await select(chat.id);
@@ -343,5 +349,5 @@ export function createGroupView(module, ctx) {
     await refresh();
   }
 
-  return { el, mount };
+  return { el, mount, unmount: stopAuto };
 }

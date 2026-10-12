@@ -540,5 +540,5 @@ export function createCardFrontendView(module, ctx) {
   }
 
   void ctx;
-  return { el, mount };
+  return { el, mount, unmount: () => sandbox.destroy() };
 }

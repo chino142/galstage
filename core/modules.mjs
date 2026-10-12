@@ -405,8 +405,12 @@ export const MODULES = [
     title: '图片生成',
     summary: '立绘、背景、CG，与剧情联动',
     status: 'partial',
-    web: { view: 'imagegen', icon: '🖼️' },
-    // 出图早就统一走 ComfyUI 那一套了（/api/comfy/*），/api/images/* 是迁移后留下的死桩。
+    // 没有自己的视图：这块功能就长在「工具箱 → ComfyUI」里 —— 工作流、LoRA、批量表情差分、
+    // 图生图 / 局部重绘 / 扩图全在那一页。所以声明成内部板块（nav:false），不占导航：
+    // 否则点进去是个空占位页，可功能明明是好的，反而误导人。
+    // 模块本身仍留在模块地图里：蓝图 2.7 的账要记，别的模块也 dependsOn 它。
+    nav: false,
+    // 出图统一走 ComfyUI 那一套（/api/comfy/*），/api/images/* 是迁移后留下的死桩，已删。
     api: ['/api/comfy'],
     blueprint: '2.7',
     plan: [

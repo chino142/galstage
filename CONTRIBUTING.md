@@ -34,7 +34,7 @@ node server/index.mjs          # 需要 Node 24 或更高
 ## 提 PR 要做到的事
 
 1. **跑测试**：`node tests/run.mjs` 和 `node tests/api-test.mjs` 都要绿。
-   改了界面再加一条 `node work/ui-smoke.mjs`（需要本机有 Chrome 或 Edge）。
+   改了界面再加一条 `node tests/ui-smoke.mjs`（自带精简 DOM，不需要浏览器）。
 2. **配测试**：新功能请带一条测试。这个项目的习惯是先用例后实现：
    `tests/run.mjs` 放纯逻辑，`tests/api-test.mjs` 放 HTTP 端到端。
 3. **不要引入第三方运行时依赖**。这是最硬的一条约束：只用 Node 内置模块

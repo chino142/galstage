@@ -51,7 +51,7 @@
 node server/index.mjs          # 默认 http://127.0.0.1:8788
 node tests/run.mjs             # 引擎与架构
 node tests/api-test.mjs        # 端到端 HTTP（自己起临时服务与临时数据目录）
-node work/ui-smoke.mjs         # 界面冒烟（本地脚本，需要 Chrome 或 Edge）
+node tests/ui-smoke.mjs        # 界面冒烟（自带精简 DOM，不需要浏览器）
 ```
 
 - **改完必须全绿再打包。** 条目数会随版本变，以输出为准，别照文档里的数字对。

@@ -10,7 +10,7 @@
 
 - [ ] `node tests/run.mjs` 通过
 - [ ] `node tests/api-test.mjs` 通过
-- [ ] 改了界面的话，`node work/ui-smoke.mjs` 通过
+- [ ] 改了界面的话，`node tests/ui-smoke.mjs` 通过
 - [ ] 新功能带了测试
 - [ ] **没有引入第三方运行时依赖**（这个项目只用 Node 内置模块，前端无构建）
 - [ ] 没有把 `data/` `work/` `build/` 提交进来

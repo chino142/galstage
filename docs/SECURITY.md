@@ -59,7 +59,7 @@
    配置 / 修改 / 连接 / 调用都只有管理员能做（成员 403）。
 - 测试覆盖：`tests/api-test.mjs` 的「两个账号互相看不到对方的对话」「/api/host/* 只有
   管理员能用」「成员不能靠本地代理托管在主机上执行命令」「成员不能让主机替他连 ComfyUI」，
-  以及 `work/verify-multiuser.mjs` 的 37 条手动清单。
+  以及 `tests/verify-multiuser.mjs` 的 37 条手动清单。
 
 ## 3. 路径与文件
 

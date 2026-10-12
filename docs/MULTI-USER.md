@@ -106,7 +106,7 @@ node server/mcp-stdio.mjs --data-dir D:\tavern-host --user alice
 
 ## 验证（这轮已经跑过）
 
-下面七条是照着手动脚本 `work/verify-multiuser.mjs` 跑的（`node work/verify-multiuser.mjs`，
+下面七条是照着手动脚本 `tests/verify-multiuser.mjs` 跑的（`node tests/verify-multiuser.mjs`，
 **37 条断言全过**）。它用 `fetch` + 手动 cookie 打接口，不依赖浏览器：
 
 1. `--multi-user` 起服务 → 首页出现"建管理员账号" → 建完自动进入。
@@ -122,7 +122,7 @@ node server/mcp-stdio.mjs --data-dir D:\tavern-host --user alice
 伪造 `x-forwarded-for`），全量 66 条接口用例全过。
 
 > **浏览器点检没做**：本机浏览器权限被策略挡着，`127.0.0.1` 打不开（也不许绕路）。
-> 兜底是 `work/ui-smoke.mjs`（33 个视图都挂得上）+ 上面这些接口用例；登录页与主机管理
+> 兜底是 `tests/ui-smoke.mjs`（40 个视图都挂得上）+ 上面这些接口用例；登录页与主机管理
 > 这两屏是纯 DOM、逻辑很薄，但**没有真人点过**。
 
 ## 已知边界

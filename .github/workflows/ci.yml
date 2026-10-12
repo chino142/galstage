@@ -28,5 +28,7 @@ jobs:
       - name: 接口测试（HTTP 端到端）
         run: node tests/api-test.mjs
 
-      # 前端冒烟（无头浏览器点一遍所有视图）跑不了 CI：它在本机的 work/ 目录里，
-      # 而 work/ 不进仓库（草稿区）。要跑就在本地跑：node work/ui-smoke.mjs
+      # 前端冒烟：自带精简 DOM，把 40 个视图挨个挂一遍，纯 Node、不需要浏览器。
+      # （以前它在 work/ 里、不进仓库，所以 CI 跑不了 —— 现在收进 tests/ 了。）
+      - name: 前端冒烟（视图挂载）
+        run: node tests/ui-smoke.mjs

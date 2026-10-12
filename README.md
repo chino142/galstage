@@ -289,8 +289,8 @@ bundle 与 blob 并打印手动注入命令。产物跑起来后页面（HTML/CS
 
 同一个 exe 也能当 MCP 服务器：`.\build\silver-tavern.exe --mcp --data-dir <数据目录>`。
 
-> 本机浏览器权限被策略挡着，界面是 `work/ui-smoke.mjs` 冒烟 + 接口测试兜的底，
-> 没有真人点检；exe 的验证用了 `work/verify-exe.mjs`（起服务、请求 `/api/health` 与 `/app.js`）。
+> 本机浏览器权限被策略挡着，界面是 `tests/ui-smoke.mjs` 冒烟 + 接口测试兜的底，
+> 没有真人点检；exe 的验证用了 `tests/verify-exe.mjs`（起服务、请求 `/api/health` 与 `/app.js`）。
 
 ## 给朋友用（多用户模式）
 

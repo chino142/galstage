@@ -104,7 +104,7 @@ python main.py --enable-cors-header "http://127.0.0.1:8788"
 - `tests/api-test.mjs`：`client-runs` 接口、attachments 绑定（含去重）、
   多用户租户默认 `client` 且不向用户地址发请求、成员把执行模式改回 `server` 会被 403
   （`/api/comfy/config` 与 `/api/settings` 两条路都挡）。
-- `work/ui-smoke.mjs`：对假 ComfyUI 真跑一遍浏览器的「提交 → WS → 取图 → 上传 → 绑消息」。
+- `tests/ui-smoke.mjs`：对假 ComfyUI 真跑一遍浏览器的「提交 → WS → 取图 → 上传 → 绑消息」。
 
 本机浏览器权限被策略挡着，所以没有真人点检；上面那条冒烟用的是 Node 自带的
 `fetch` / `WebSocket`（与浏览器同一套实现），能覆盖全流程。

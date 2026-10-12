@@ -491,7 +491,7 @@ node <项目目录>/server/mcp-stdio.mjs --data-dir <数据目录>
 - 单机模式**完全没变**：不带 `--multi-user` / `TAVERN_MULTI_USER` 时走原来的   `startTavern`，没有登录页、没有 `/api/auth`、也没有主机管理。
 
 验证与安全：`tests/api-test.mjs` 里有 7 条多用户端到端用例（首次建号、两账号隔离、`/api/host/*` 权限、停用后会话失效、加密导出再导入、删账号确认 + purge）。**登录限速与
-伪造 `x-forwarded-for`**），`work/verify-multiuser.mjs` 是照着 `docs/MULTI-USER.md`
+伪造 `x-forwarded-for`**），`tests/verify-multiuser.mjs` 是照着 `docs/MULTI-USER.md`
 那 7 条清单写的手动脚本（37 条断言）。安全细节单独写在 `docs/SECURITY.md`：口令哈希参数、会话令牌与 Cookie 属性、限速、跨账号隔离、路径与文件、破坏性操作、插件与卡内
 前端的注入面，以及这一轮查出来并修掉的问题（备份恢复的越界写入、卡内前端宿主侧能力漏检查、MCP `--user` 未校验、畸形转成 500）。
 

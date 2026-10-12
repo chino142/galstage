@@ -16,6 +16,14 @@ const LOCAL_SIG = 0x04034b50;
 const CENTRAL_SIG = 0x02014b50;
 const EOCD_SIG = 0x06054b50;
 
+/**
+ * 解包上限。几 MB 的 deflate 能解出几十 GB（zip 炸弹），而解包是同步的 ——
+ * 一旦炸了，主进程的内存被吃光，多用户模式下是**所有人一起掉线**。
+ * 备份包本来就该是"一个人的数据"这个量级，超过就是异常。
+ */
+const MAX_ENTRY_BYTES = 256 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
+
 function dosDateTime(date = new Date()) {
   const d = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
   const time = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2);
@@ -106,6 +114,7 @@ export function readZip(buffer) {
   const total = buffer.readUInt16LE(eocdOffset + 10);
   let pointer = buffer.readUInt32LE(eocdOffset + 16);
   const out = [];
+  let totalBytes = 0;
   for (let index = 0; index < total; index += 1) {
     if (buffer.readUInt32LE(pointer) !== CENTRAL_SIG) throw new Error('zip 中央目录坏了');
     const method = buffer.readUInt16LE(pointer + 10);
@@ -122,8 +131,15 @@ export function readZip(buffer) {
     const localExtraLength = buffer.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
     const payload = buffer.subarray(dataStart, dataStart + compressedSize);
-    const data = method === 0 ? Buffer.from(payload) : inflateRawSync(payload);
+    if (uncompressedSize > MAX_ENTRY_BYTES) {
+      throw new Error(`zip 条目 ${name} 声明解压后有 ${uncompressedSize} 字节，超过单个条目上限`);
+    }
+    const data = method === 0
+      ? Buffer.from(payload)
+      : inflateRawSync(payload, { maxOutputLength: MAX_ENTRY_BYTES });
     if (data.length !== uncompressedSize) throw new Error(`zip 条目 ${name} 解出来大小对不上`);
+    totalBytes += data.length;
+    if (totalBytes > MAX_TOTAL_BYTES) throw new Error('这个 zip 解出来太大了：超过整包上限，拒绝继续解');
     out.push({ name, data, size: data.length });
 
     pointer += 46 + nameLength + extraLength + commentLength;

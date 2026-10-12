@@ -50,7 +50,7 @@ import {
   tidyPrompt,
   workflowInputs,
 } from './comfy.mjs';
-import { PRICE_PRESETS, cacheSavings, describeTotals, fillDays, normaliseUsage } from './cost.mjs';
+import { PRICE_PRESETS, cacheDiscountFor, cacheSavings, describeTotals, fillDays, normaliseUsage } from './cost.mjs';
 import { REVIEW_SCOPES, buildReport, normalisePeriod, previousPeriod } from './review.mjs';
 import { applyPromptKit, describePromptKit } from './prompt-kit.mjs';
 import { computeCost } from '../chat/tokens.mjs';
@@ -1056,7 +1056,7 @@ export function createCostService(ctx) {
     return {
       priceIn,
       priceOut,
-      cacheDiscount: override?.cacheDiscount ?? 0.1,
+      cacheDiscount: override?.cacheDiscount ?? cacheDiscountFor(model ?? base.model ?? ''),
       currency: override?.currency ?? 'CNY',
       source: override ? 'pricing' : priceIn !== null || priceOut !== null ? 'provider' : 'none',
     };
@@ -1138,7 +1138,12 @@ export function createCostService(ctx) {
   }
 
   function listPricing() {
-    if (!store()) return { items: PRICE_PRESETS.map((preset) => ({ ...preset, providerId: '', currency: 'CNY', cacheDiscount: 0.1, id: null })), presets: PRICE_PRESETS };
+    if (!store()) {
+      return {
+        items: PRICE_PRESETS.map((preset) => ({ ...preset, providerId: '', currency: 'CNY', id: null })),
+        presets: PRICE_PRESETS,
+      };
+    }
     const items = store().listPricing();
     return { items, presets: PRICE_PRESETS };
   }

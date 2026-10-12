@@ -7,6 +7,7 @@
 
 import { newId, nowIso } from '../../core/ids.mjs';
 import { ValidationError } from '../../core/errors.mjs';
+import { cacheDiscountFor } from '../../core/toolbox/cost.mjs';
 
 const USAGE_COLUMNS = `id, chat_id, character_id, member_id, provider_id, model, kind, source,
   prompt_tokens, completion_tokens, total_tokens, cached_tokens,
@@ -236,7 +237,10 @@ export function createCostStore({ repo }) {
     const priceOut = input.priceOut === null || input.priceOut === undefined || input.priceOut === '' ? null : Number(input.priceOut);
     if (priceIn !== null && !Number.isFinite(priceIn)) throw new ValidationError('输入单价应该是数字（元 / 百万 token）');
     if (priceOut !== null && !Number.isFinite(priceOut)) throw new ValidationError('输出单价应该是数字（元 / 百万 token）');
-    const discount = input.cacheDiscount === undefined ? 0.1 : Number(input.cacheDiscount);
+    // 没显式给折扣时按厂商取默认（OpenAI 0.5 / Gemini 0.25 / Anthropic·DeepSeek 0.1）。
+    // 一律 0.1 会把 OpenAI、Gemini 的缓存节省算多、实际花费算少。
+    const hint = String(input.model ?? '').trim() || String(input.label ?? '');
+    const discount = input.cacheDiscount === undefined ? cacheDiscountFor(hint) : Number(input.cacheDiscount);
     if (!Number.isFinite(discount) || discount < 0 || discount > 1) throw new ValidationError('缓存折扣要在 0 ~ 1 之间');
     repo.run(
       `INSERT INTO pricing (id, provider_id, model, label, currency, price_in, price_out, cache_discount, updated_at)

@@ -188,7 +188,7 @@ import { createAssetStore } from '../server/db/assets.mjs';
 import { comfyErrorMessage, describeFetchError, normaliseBaseUrl } from '../server/toolbox/comfy.mjs';
 import { createComfyLauncher, comfyLaunchSpec, parseLaunchArgs } from '../server/toolbox/comfy-launcher.mjs';
 import { createComfyRunner } from '../server/toolbox/runner.mjs';
-import { cacheSavings, estimationDelta, fillDays, normaliseUsage, PRICE_PRESETS } from '../core/toolbox/cost.mjs';
+import { cacheDiscountFor, cacheSavings, estimationDelta, fillDays, normaliseUsage, PRICE_PRESETS } from '../core/toolbox/cost.mjs';
 import { createCostStore } from '../server/db/cost.mjs';
 import { buildReport, longestStreak, normalisePeriod } from '../core/toolbox/review.mjs';
 import { createReviewStore } from '../server/db/review.mjs';
@@ -3921,6 +3921,22 @@ test('工具箱：定时任务 —— 下次运行时间、到点判断、重启
   assert.equal(defaults.length, 2);
   assert.ok(defaults.every((task) => task.enabled === false), '默认任务只建出来、默认关着');
   assert.ok(defaults.some((task) => task.kind === 'cleanup' && task.every === 'weekly'));
+});
+
+test('花费：缓存折扣按厂商取默认，不能一律 0.1', () => {
+  // 「实际花费（扣掉缓存折扣）」直接拿这个数算：写小了就是节省高估、花费低估。
+  assert.equal(cacheDiscountFor('gpt-4o'), 0.5);
+  assert.equal(cacheDiscountFor('gpt-4o-mini'), 0.5);
+  assert.equal(cacheDiscountFor('o3-mini'), 0.5);
+  assert.equal(cacheDiscountFor('gemini-2.5-pro'), 0.25);
+  assert.equal(cacheDiscountFor('claude-3-5-sonnet'), 0.1);
+  assert.equal(cacheDiscountFor('deepseek-chat'), 0.1);
+  assert.equal(cacheDiscountFor('某个没听说过的模型'), 0.1, '认不出来就保持老行为');
+
+  // 示例价目表里的折扣必须和函数算出来的一致，别两处各写一个数。
+  for (const preset of PRICE_PRESETS) {
+    assert.equal(preset.cacheDiscount, cacheDiscountFor(preset.model), `${preset.model} 的 cacheDiscount`);
+  }
 });
 
 test('工具箱：老库升版本时，跑迁移前会自动留一份备份', () => {

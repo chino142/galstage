@@ -76,6 +76,17 @@ export function asyncNotImplemented(what) {
 /** 把任意异常整理成可以写进响应的结构。 */
 export function toErrorPayload(err) {
   if (isTavernError(err)) return { status: err.status, body: err.toJSON() };
-  const message = err && err.message ? err.message : String(err);
-  return { status: 500, body: { error: { code: 'INTERNAL_ERROR', message, details: null } } };
+  // 非 TavernError = 我们没预料到的内部错误（SQLite 约束、ENOENT、TypeError…）。
+  // 这些 message 里会带表名、SQL 片段、绝对路径 —— 多用户模式下等于给成员送主机结构信息，
+  // 所以回给客户端一律固定文案，原始错误只进日志（调用方负责记 err）。
+  return {
+    status: 500,
+    body: {
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: '服务内部出错了。具体原因在服务端日志里，可以拿这个 requestId 去对。',
+        details: null,
+      },
+    },
+  };
 }

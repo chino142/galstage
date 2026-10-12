@@ -118,6 +118,23 @@ export function fillDays(rows = [], days = 14, now = new Date()) {
 }
 
 /**
+ * 缓存命中的折扣（命中价 ÷ 正常输入价）。
+ *
+ * **不能一律按 0.1 算**：各家不一样，而「实际花费（扣掉缓存折扣）」直接拿它算 ——
+ * 折扣写小了，节省被高估、实际花费被低估，也就是**把花掉的钱算少了**。
+ * 现在核到的：Anthropic 0.1 / DeepSeek 0.1 / Gemini 0.25 / OpenAI 0.5。
+ * 认不出来的厂商保持 0.1（老行为），用户可以自己在价目表里改。
+ */
+export function cacheDiscountFor(model = '') {
+  const text = String(model ?? '').toLowerCase();
+  if (/claude|anthropic/.test(text)) return 0.1;
+  if (/deepseek/.test(text)) return 0.1;
+  if (/gemini|google|vertex/.test(text)) return 0.25;
+  if (/gpt|openai|\bo[1-4](-|$)/.test(text)) return 0.5;
+  return 0.1;
+}
+
+/**
  * 兜底用的示例价目（元 / 百万 token）。
  *
  * 只在"一个提供方都还没配"的时候才会显示 —— 界面上那排「+ 模型名」按钮优先用
@@ -126,10 +143,10 @@ export function fillDays(rows = [], days = 14, now = new Date()) {
  * 价格仍按当时核对的官方价，用户自己改。
  */
 export const PRICE_PRESETS = [
-  { label: 'GPT-4o', model: 'gpt-4o', priceIn: 18, priceOut: 72 },
-  { label: 'GPT-4o mini', model: 'gpt-4o-mini', priceIn: 1.1, priceOut: 4.4 },
-  { label: 'Claude Sonnet', model: 'claude-3-5-sonnet', priceIn: 22, priceOut: 110 },
-  { label: 'Claude Haiku', model: 'claude-3-5-haiku', priceIn: 5.8, priceOut: 29 },
-  { label: 'Gemini 1.5 Pro', model: 'gemini-1.5-pro', priceIn: 8.7, priceOut: 35 },
-  { label: 'DeepSeek V3', model: 'deepseek-chat', priceIn: 1.4, priceOut: 5.6 },
+  { label: 'GPT-4o', model: 'gpt-4o', priceIn: 18, priceOut: 72, cacheDiscount: 0.5 },
+  { label: 'GPT-4o mini', model: 'gpt-4o-mini', priceIn: 1.1, priceOut: 4.4, cacheDiscount: 0.5 },
+  { label: 'Claude Sonnet', model: 'claude-3-5-sonnet', priceIn: 22, priceOut: 110, cacheDiscount: 0.1 },
+  { label: 'Claude Haiku', model: 'claude-3-5-haiku', priceIn: 5.8, priceOut: 29, cacheDiscount: 0.1 },
+  { label: 'Gemini 1.5 Pro', model: 'gemini-1.5-pro', priceIn: 8.7, priceOut: 35, cacheDiscount: 0.25 },
+  { label: 'DeepSeek V3', model: 'deepseek-chat', priceIn: 1.4, priceOut: 5.6, cacheDiscount: 0.1 },
 ];

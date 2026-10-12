@@ -9,6 +9,7 @@ import { readSettings, writeSettings } from '../db/settings.mjs';
 import { createComfyClient, normaliseBaseUrl } from '../toolbox/comfy.mjs';
 import { ENCRYPTED_BACKUP_EXT, decryptBuffer, encryptBuffer } from '../backup-crypto.mjs';
 import { COMFY_LAUNCH_DENIED, COMFY_LAUNCHER_KEYS, SERVER_COMFY_DENIED, deniesHostActions, deniesServerComfy } from './_helpers.mjs';
+import { cacheDiscountFor } from '../../core/toolbox/cost.mjs';
 import { listBindings, listProviders } from '../db/providers.mjs';
 import { describePromptKit, normalisePromptKit } from '../../core/toolbox/prompt-kit.mjs';
 
@@ -380,6 +381,9 @@ export function register(router, { engine, repo, comfyRunner, comfyLauncher = nu
         hasPrice: Number.isFinite(priceIn) && Number.isFinite(priceOut),
         priceIn: Number.isFinite(priceIn) ? priceIn : null,
         priceOut: Number.isFinite(priceOut) ? priceOut : null,
+        // 按厂商给的缓存折扣（OpenAI 0.5 / Gemini 0.25 / Anthropic·DeepSeek 0.1）：
+        // 用户照这个建价目表，就不会让「实际花费」算错。
+        cacheDiscount: cacheDiscountFor(name),
       });
     };
     const chatProviders = listProviders(repo, { kind: 'chat' }).filter((provider) => provider.enabled !== false);

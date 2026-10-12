@@ -365,7 +365,10 @@ export function createHost({
       return ctx.fail(404, 'NOT_FOUND', `找不到 ${ctx.path}`);
     } catch (err) {
       const { status, body } = toErrorPayload(err);
-      logger?.debug?.(`[host] ${ctx.requestId} ${ctx.method} ${ctx.path} -> ${status} ${body?.error?.code}`);
+      // 5xx 的原始错误要落日志：响应里不再回内部 message（那会漏表名 / 路径 / SQL），
+      // 所以这里是它唯一能落下来的地方。
+      if (status >= 500) logger?.error?.(`[host] ${ctx.requestId} ${ctx.method} ${ctx.path}`, err);
+      else logger?.debug?.(`[host] ${ctx.requestId} ${ctx.method} ${ctx.path} -> ${status} ${body?.error?.code}`);
       if (!res.headersSent) res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(body));
       return undefined;

@@ -110,9 +110,12 @@ if (injected.status !== 0) {
   console.error(
     [
       'postject 注入失败（它是构建期工具，需要能跑 npx）。',
+      // spawnSync 起不来进程时 status 是 null，真正的原因在 error 里：
+      // 把「npx 不存在」和「postject 自己失败」区分开，省一次瞎猜。
+      injected.error?.message ? `原因：${injected.error.message}` : '',
       '产物保留在这两个文件里，手动注入：',
       `  npx --yes postject "${outExe}" NODE_SEA_BLOB "${blobPath}" --sentinel-fuse ${FUSE}`,
-    ].join('\n'),
+    ].filter(Boolean).join('\n'),
   );
   process.exit(injected.status ?? 1);
 }

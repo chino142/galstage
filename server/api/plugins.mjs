@@ -7,6 +7,7 @@
 
 import { pluginContentType, readPluginFile } from '../plugins.mjs';
 import { PLUGIN_HOOKS } from '../../core/plugins.mjs';
+import { deniesHostActions } from './_helpers.mjs';
 
 export function register(router) {
   router.get('/api/plugins', (ctx) => {
@@ -17,7 +18,9 @@ export function register(router) {
       errors: plugins.errors ?? [],
       modules: plugins.modules ?? [],
       hooks: PLUGIN_HOOKS,
-      directory: root ? `${root}${root.includes('\\') ? '\\' : '/'}plugins` : null,
+      // 插件目录的绝对路径属于「主机结构」信息：和 hostRoot 一样，多用户模式下只给管理员。
+      // 成员拿到它就能去猜主机上的布局。插件名单与钩子表本身不敏感，照旧返回。
+      directory: deniesHostActions(ctx) || !root ? null : `${root}${root.includes('\\') ? '\\' : '/'}plugins`,
     });
   });
 

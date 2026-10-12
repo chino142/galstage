@@ -18,7 +18,7 @@
  *   node scripts/package-release.mjs  # 再打包（可加 --exe <路径> --out <路径>）
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -91,10 +91,19 @@ if (!existsSync(exePath)) {
 
 const entries = [];
 
+/**
+ * zip 条目统一用这个固定时间戳。
+ *
+ * 以前嵌的是源文件的真实 mtime —— 同一份代码今天打和明天打，字节就不一样，
+ * 没法拿哈希做对比（条目顺序那边已经排过序了，说明作者是在意可对比性的，只漏了这一项）。
+ * 用 2020-01-01：ZIP 的 DOS 时间戳下限是 1980，别用更早的。
+ */
+const ZIP_EPOCH = new Date(Date.UTC(2020, 0, 1, 0, 0, 0));
+
 /** 加一个文件。缺谁就报谁的名字，别产出半个包。 */
 function addFile(zipName, absolutePath) {
   if (!existsSync(absolutePath)) throw new Error(`缺少文件：${path.relative(ROOT, absolutePath)}`);
-  entries.push({ name: zipName, data: readFileSync(absolutePath), mtime: statSync(absolutePath).mtime });
+  entries.push({ name: zipName, data: readFileSync(absolutePath), mtime: ZIP_EPOCH });
 }
 
 console.log('[1/4] 收 exe 与文档 …');

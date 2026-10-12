@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    # 用例是逐条串行跑的，harness 里又没有单条超时：任一用例挂住，整套会一直挂着。
+    # 给个总闸，别让它占着 runner。
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

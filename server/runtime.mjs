@@ -20,6 +20,7 @@ import { createModelGateway } from './providers/registry.mjs';
 import { pickDeclaredParams } from './providers/params.mjs';
 import { createLauncher } from './providers/launcher.mjs';
 import { createMcpRegistry } from '../core/mcp/registry.mjs';
+import { createMcpClient } from './mcp/client.mjs';
 import { createAgentRuntime } from './agent/runtime.mjs';
 import { listMcpServers } from './db/mcp.mjs';
 import { createChatStore } from './db/chat.mjs';
@@ -70,7 +71,8 @@ export function createRuntime({ dataDir, logger: providedLogger = null, withComf
   // 所以多用户模式下只给管理员账号的租户建（见 server/tenants.mjs）。
   const launcher = withLauncher ? createLauncher({ logger }) : null;
   const models = createModelGateway({ repo: db.repo, masterKey, launcher, logger });
-  const mcp = createMcpRegistry({ logger });
+  // MCP 客户端的 stdio 传输要 spawn 进程：实现放在 server/，由这里注入进 core 的注册表。
+  const mcp = createMcpRegistry({ logger, createClient: createMcpClient });
   for (const server of listMcpServers(db.repo)) mcp.define(server);
   const agents = createAgentRuntime({ repo: db.repo, models, mcp, logger });
 

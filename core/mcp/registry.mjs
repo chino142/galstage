@@ -5,7 +5,6 @@
  * "内置技能"和"外部工具" —— 写卡时它们出现在同一张工具表里。
  */
 
-import { createMcpClient } from './client.mjs';
 import { NotFoundError } from '../errors.mjs';
 
 export function slugifyName(text) {
@@ -16,7 +15,13 @@ export function slugifyName(text) {
   return slug || 'tool';
 }
 
-export function createMcpRegistry({ logger = console, timeoutMs = 20000 } = {}) {
+/**
+ * @param {{ createClient?: Function, logger?: object, timeoutMs?: number }} options
+ *   `createClient` 是**注入进来的端口**，不是 import 来的：stdio 传输要在主机上
+ *   spawn 进程，那是 server 层的事（实现在 server/mcp/client.mjs）。
+ *   这样 core 只留「注册表 + 把外部工具包成技能」的纯逻辑，能单独测试。
+ */
+export function createMcpRegistry({ logger = console, timeoutMs = 20000, createClient = null } = {}) {
   /** @type {Map<string, {config: object, client: object|null, tools: Array}>} */
   const servers = new Map();
 
@@ -37,7 +42,10 @@ export function createMcpRegistry({ logger = console, timeoutMs = 20000 } = {}) 
       target.tools = await target.client.listTools();
       return target.tools;
     }
-    const client = createMcpClient({
+    if (!createClient) {
+      throw new Error('MCP 需要注入 createClient：stdio 传输会在主机上起进程，core 层不许碰 child_process');
+    }
+    const client = createClient({
       name: target.config.name ?? id,
       command: target.config.command,
       args: target.config.args ?? [],

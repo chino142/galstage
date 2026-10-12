@@ -1,7 +1,7 @@
 /**
  * MCP 的 stdio 传输层：一行一个 JSON-RPC 消息，stdin 读请求、stdout 写响应。
  *
- * 和 core/mcp/client.mjs 对称（那边是客户端）。规矩只有一条：
+ * 和 ./client.mjs 对称（那边是客户端）。规矩只有一条：
  * **stdout 上只能出现 JSON-RPC**，任何日志都得走 stderr，否则客户端解析会炸。
  *
  * 支持的方法：initialize / notifications/initialized / ping / tools/list / tools/call。

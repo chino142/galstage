@@ -1,7 +1,7 @@
 /**
  * 把 Silver Tavern 变成 MCP **服务器**（蓝图 3.2「扩展性」第一条）。
  *
- * 和 core/mcp/client.mjs 刚好相反：那个是"把外面的工具接进来"，这个是
+ * 和 server/mcp/client.mjs 刚好相反：那个是"把外面的工具接进来"，这个是
  * "把酒馆的能力递出去"，让 Codex / Claude Code 这类客户端直接读写酒馆：
  * 列角色卡、查对话、发消息触发回复、改世界书、切预设、看提示词快照。
  *
@@ -63,7 +63,7 @@ export function confirmResult(what, hint = null) {
 /**
  * @param {{services?:object, stores?:object, repo?:object, version?:string}} deps
  */
-export function createMcpServer({ services = {}, stores = {}, repo = null, version = '0.7.0', extraTools = [] } = {}) {
+export function createMcpServer({ services = {}, stores = {}, repo = null, version = '0.7.1', extraTools = [] } = {}) {
   const cards = services.cards ?? {};
   const chat = services.chat ?? {};
   const worldbook = services.worldbook ?? {};

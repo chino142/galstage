@@ -4,10 +4,15 @@
  * 协议本身很简单：一行一个 JSON-RPC 消息，stdin 写请求、stdout 读响应。
  * 这里只实现写卡用得上的四个方法：initialize / tools/list / tools/call / ping，
  * 外加超时处理与退出清理。
+ *
+ * **为什么在 server/ 而不是 core/**：它会 `spawn` 一个子进程、还会把 `process.env`
+ * 传给对方 —— 那是主机上的动作，core 层不许碰（见 AGENTS.md 的三层划分）。
+ * core/mcp/registry.mjs 通过注入的 `createClient` 端口拿到它。
  */
 
 import { spawn } from 'node:child_process';
-import { NotFoundError } from '../errors.mjs';
+
+import { NotFoundError } from '../../core/errors.mjs';
 
 export const MCP_PROTOCOL_VERSION = '2024-11-05';
 
@@ -109,7 +114,7 @@ export function createMcpClient({ name, command, args = [], env = {}, cwd = null
     const result = await request('initialize', {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'silver-tavern', version: '0.3.0' },
+      clientInfo: { name: 'silver-tavern', version: '0.7.1' },
     });
     notify('notifications/initialized', {});
     initialized = true;

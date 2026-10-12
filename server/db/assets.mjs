@@ -14,6 +14,7 @@ import path from 'node:path';
 import { newId, nowIso } from '../../core/ids.mjs';
 import { ValidationError } from '../../core/errors.mjs';
 import { fromJson } from './repo.mjs';
+import { safeResolve } from './paths.mjs';
 
 const COLUMNS = 'id, kind, name, mime, size, sha256, path, width, height, meta, created_at';
 
@@ -93,8 +94,9 @@ export function createAssetStore({ repo, dataDir }) {
   function buffer(id) {
     const found = get(id);
     if (!found) return null;
-    const absolute = path.join(dataDir ?? '', found.path);
-    if (!existsSync(absolute)) return null;
+    // 库里的路径是不可信输入（可能跟着加密备份进来），必须过包含性校验。
+    const absolute = safeResolve(dataDir ?? '', found.path);
+    if (!absolute || !existsSync(absolute)) return null;
     return { buffer: readFileSync(absolute), asset: found };
   }
 
@@ -136,9 +138,9 @@ export function createAssetStore({ repo, dataDir }) {
     const found = get(id);
     if (!found) return false;
     repo.run('DELETE FROM assets WHERE id = ?', [id]);
-    const absolute = path.join(dataDir ?? '', found.path);
+    const absolute = safeResolve(dataDir ?? '', found.path);
     try {
-      if (existsSync(absolute)) unlinkSync(absolute);
+      if (absolute && existsSync(absolute)) unlinkSync(absolute);
     } catch {
       // 文件删不掉不影响数据库记录，留个孤儿比报错强
     }

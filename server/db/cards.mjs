@@ -15,6 +15,7 @@ import path from 'node:path';
 import { newId, nowIso } from '../../core/ids.mjs';
 import { fromJson } from './repo.mjs';
 import { NotFoundError, ValidationError } from '../../core/errors.mjs';
+import { safeResolve } from './paths.mjs';
 
 const CARD_COLUMNS = `id, name, spec_version, data, avatar_asset_id, source, favorite, created_at, updated_at`;
 
@@ -86,7 +87,8 @@ export function createCardStore({ repo, dataDir = null }) {
     const rel = String(row.avatar_asset_id);
     // 只认我们写下的相对路径，别让脏数据读出去。
     if (!rel.startsWith('cards/')) return null;
-    const file = path.join(dataDir ?? '', rel);
+    const file = safeResolve(dataDir ?? '', rel);
+    if (!file) return null;
     if (!existsSync(file)) return null;
     return readFileSync(file);
   }
@@ -260,10 +262,14 @@ export function createCardStore({ repo, dataDir = null }) {
     if (!existing) throw new NotFoundError(`角色卡 ${id}`);
     repo.run('DELETE FROM characters WHERE id = ?', [id]);
     if (existing.avatarAssetId && String(existing.avatarAssetId).startsWith('cards/')) {
-      try {
-        unlinkSync(path.join(dataDir ?? '', String(existing.avatarAssetId)));
-      } catch {
-        // 文件可能已经被手动删掉了，不影响删除记录
+      // 光看 `cards/` 前缀挡不住 `cards/../../<别处>`，再走一遍包含性校验。
+      const target = safeResolve(dataDir ?? '', existing.avatarAssetId);
+      if (target) {
+        try {
+          unlinkSync(target);
+        } catch {
+          // 文件可能已经被手动删掉了，不影响删除记录
+        }
       }
     }
   }

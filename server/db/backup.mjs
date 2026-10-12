@@ -28,6 +28,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { randomBytes } from 'node:crypto';
 
+import { safeResolve } from './paths.mjs';
+
 import { ValidationError } from '../../core/errors.mjs';
 import { readSettings } from './settings.mjs';
 import { createZip, readZip } from '../toolbox/zip.mjs';
@@ -55,20 +57,6 @@ function listFiles(root, prefix = '') {
     else if (entry.isFile()) out.push({ relative, absolute, size: statSync(absolute).size });
   }
   return out;
-}
-
-/**
- * 把备份里的相对路径安全地拼到目标目录下。
- *
- * zip 里的条目名是**外部输入**（`import-encrypted` 收进来的备份可能被人为改过），
- * 所以 `assets/../../evil.js` 这种必须挡住 —— 否则恢复就能往数据目录外面写文件。
- * 想往外跑就返回 null，调用方跳过并计数。
- */
-function safeResolve(root, relative) {
-  const base = path.resolve(root);
-  const absolute = path.resolve(base, relative);
-  if (absolute === base) return null;
-  return absolute.startsWith(base + path.sep) ? absolute : null;
 }
 
 /** 条目名本身就不合法（绝对路径 / 盘符 / 含 `..` 段）时直接拒绝，别等到写的时候再跳过。 */

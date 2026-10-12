@@ -4336,21 +4336,37 @@ test('多用户：成员不能加本地 MCP 服务器（主机会启动进程）
 
 test('多用户：登录失败按 IP 限速，伪造的 x-forwarded-for 不算数', async () => {
   await ensureMultiUser();
+  // 造一个"攻击者自己的"账号：它能正常登录，但**不该**让 boss 的失败额度被顺带清掉。
+  const admin = cookieJar();
+  assert.equal((await hostCall(admin, 'POST', '/api/auth/login', { name: 'boss', password: 'boss-password' })).status, 200);
+  const throwaway = 'throttle-probe';
+  await hostCall(admin, 'POST', '/api/host/users', { name: throwaway, password: 'throwaway-pass-1', role: 'user' });
+
   let index = 0;
   const wrongLogin = (extra) => hostCall(cookieJar(), 'POST', '/api/auth/login', { name: 'boss', password: `wrong-${index += 1}-password` }, extra ? { headers: extra } : {});
 
-  // 连错 9 次还在窗口内，一次对口令就把失败计数清掉
+  // 连错 9 次：还在阈值内
   for (let i = 0; i < 9; i += 1) assert.equal((await wrongLogin()).status, 401);
-  assert.equal((await hostCall(cookieJar(), 'POST', '/api/auth/login', { name: 'boss', password: 'boss-password' })).status, 200, '第 10 次对上了还能进');
 
-  // 再连错：第 10 次仍是 401，第 11 次开始 429
+  // 用一个**别的**账号正常登录一次：这一步不该把 boss 的失败额度清掉。
+  assert.equal((await hostCall(cookieJar(), 'POST', '/api/auth/login', { name: throwaway, password: 'throwaway-pass-1' })).status, 200);
+
+  // 所以 boss 这边再错一下就到阈值，接着就该限速；要是额度被清零了，这里会重新数到十次左右。
+  let wrongAfterSuccess = 0;
   let saw429 = false;
   for (let i = 0; i < 12 && !saw429; i += 1) {
     const attempt = await wrongLogin();
     if (attempt.status === 429) saw429 = true;
-    else assert.equal(attempt.status, 401);
+    else {
+      assert.equal(attempt.status, 401);
+      wrongAfterSuccess += 1;
+    }
   }
-  assert.ok(saw429, '连错十次之后应该限速');
+  assert.ok(saw429, '连错之后应该限速');
+  assert.ok(
+    wrongAfterSuccess <= 1,
+    `别的账号成功登录不该重置 boss 的额度（重置会重新给出约 10 次，实际给了 ${wrongAfterSuccess} 次）`,
+  );
 
   // 没开 TAVERN_TRUST_PROXY 时不能靠 x-forwarded-for 换一个新桶
   const spoofed = await wrongLogin({ 'x-forwarded-for': '203.0.113.7' });

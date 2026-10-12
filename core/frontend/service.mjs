@@ -122,7 +122,7 @@ export const SANDBOX_POLICY = {
       pattern: /\blocation\s*(\.\s*(href|assign|replace)\b)?\s*=[^=]|\blocation\s*\.\s*(assign|replace)\s*\(|\bwindow\s*\.\s*open\s*\(/,
       message: '沙箱里不能导航 / 开新窗口：导航不受 connect-src 管，是个能绕过"禁止联网"的口子',
     },
-    { id: 'js.locationAccess', severity: 'error', pattern: /\[\s*['"]location['"]\s*\]/, message: '不能写 window["location"] 这种形式绕过导航检查' },
+    { id: 'js.locationAccess', severity: 'error', pattern: /\[\s*['"`]location['"`]\s*\]/, message: '不能写 window["location"] 这种形式绕过导航检查' },
     // HTML 里**一律**不许出现 <script>：脚本只能放 JS 段。
     // 否则卡把代码塞进 html 就能整段绕过上面那些 js.* 规则（静态扫描只扫 js 字段）。
     { id: 'html.scriptTag', severity: 'error', pattern: /<script\b/i, message: 'HTML 里不能写 <script>：脚本一律放 JS 段（外链脚本 CSP 也会挡）' },
@@ -130,7 +130,9 @@ export const SANDBOX_POLICY = {
     { id: 'html.metaRefresh', severity: 'error', pattern: /<meta[^>]+http-equiv\s*=\s*['"]?\s*refresh/i, message: 'meta refresh 能导航出去，禁用' },
     { id: 'html.form', severity: 'warn', pattern: /<form\b/i, message: '表单无法提交（form-action 被禁），只是提示' },
     // 内联属性里的代码同样绕过 js.* 规则，所以这里是 error 不是提示
-    { id: 'html.inlineHandler', severity: 'error', pattern: /\son[a-z]+\s*=/i, message: '不能写 onclick="…" 这类内联处理器（会绕过 JS 检查）：改用 addEventListener' },
+    // 分隔符不止空白：HTML 允许 `<img src="x"/onerror=…>`，斜杠也是属性分隔符。
+    // 只认 `\s` 的话这一条形同虚设，而沙箱 CSP 是 `script-src 'unsafe-inline'` —— 内联处理器会真的执行。
+    { id: 'html.inlineHandler', severity: 'error', pattern: /(?:[\s"'/])on[a-z]+\s*=/i, message: '不能写 onclick="…" 这类内联处理器（会绕过 JS 检查）：改用 addEventListener' },
     { id: 'html.javascriptUrl', severity: 'error', pattern: /javascript\s*:/i, message: 'javascript: URL 会被拦掉' },
     // 下面这两条只有在"不允许外部资源"时才算问题：开了外链，@import 和 url(https:) 本来就是作者要用的写法。
     {

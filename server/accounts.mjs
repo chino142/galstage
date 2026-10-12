@@ -37,6 +37,15 @@ export function createAccountStore({ hostRoot, logger = console }) {
   const failures = new Map(); // ip → { count, firstAt }
   let lastPrune = 0;
 
+  /**
+   * 账号表**存在、但读不出来**时的原因（文件坏了 / 权限不对 / 被删了一半）。
+   *
+   * 这时候绝不能当成空表：空表会让「首次建号」重新开放（任何能访问端口的人都能抢到管理员），
+   * 而且随后的建号会把原来的账号表整个覆盖掉。所以只读操作照旧返回空表
+   * （界面不至于 500），但**一切写入都被拒绝**。
+   */
+  let unreadable = null;
+
   function readAll() {
     if (cache) return cache;
     if (!existsSync(file)) {
@@ -47,8 +56,10 @@ export function createAccountStore({ hostRoot, logger = console }) {
       const parsed = JSON.parse(readFileSync(file, 'utf8'));
       const accounts = Array.isArray(parsed?.accounts) ? parsed.accounts.map((entry) => normaliseAccount(entry)) : [];
       cache = { version: 1, accounts };
+      unreadable = null;
     } catch (err) {
-      logger?.warn?.(`[accounts] 账号表读不出来（当成空表，但别急着建账号）：${err?.message ?? err}`);
+      unreadable = err?.message ?? String(err);
+      logger?.warn?.(`[accounts] 账号表读不出来：${unreadable}。已停用一切账号写入，先把它修好`);
       cache = { version: 1, accounts: [] };
     }
     return cache;
@@ -84,6 +95,10 @@ export function createAccountStore({ hostRoot, logger = console }) {
 
   function create({ name, password, role = 'user', note = '' } = {}) {
     const username = normaliseUsername(name);
+    readAll();
+    if (unreadable) {
+      throw new ValidationError(`账号表读不出来，先修好 ${ACCOUNTS_FILE} 再建账号 —— 现在建号会把原来的账号表覆盖掉`);
+    }
     if (find(username)) throw new ConflictError(`账号 ${username} 已经存在了`);
     const account = normaliseAccount({
       name: username,
@@ -213,32 +228,47 @@ export function createAccountStore({ hostRoot, logger = console }) {
 
   // ---------------------------------------------------------------- 登录限速
 
-  function isThrottled(ip) {
-    if (!ip) return false;
+  /**
+   * 失败计数按「IP + 目标账号」分桶，而不是按 IP 一个桶。
+   *
+   * 按 IP 一个桶时，任何持有一个有效账号的人都能「9 次猜管理员 + 正常登录自己」
+   * 把额度刷回去 —— 管理员口令就只剩长度约束了。分桶之后，成功登录只清
+   * 自己这个账号的额度，别人账号的失败数照旧累计。
+   */
+  function bucketKey(ip, name) {
+    if (!ip) return null;
+    return `${ip}|${String(name ?? '').trim().toLowerCase()}`;
+  }
+
+  function isThrottled(ip, name) {
+    const key = bucketKey(ip, name);
+    if (!key) return false;
     prune();
-    const entry = failures.get(ip);
+    const entry = failures.get(key);
     if (!entry) return false;
     if (Date.now() - entry.firstAt > THROTTLE_WINDOW_MS) {
-      failures.delete(ip);
+      failures.delete(key);
       return false;
     }
     return entry.count >= THROTTLE_MAX_FAILURES;
   }
 
-  function recordFailure(ip) {
-    if (!ip) return false;
+  function recordFailure(ip, name) {
+    const key = bucketKey(ip, name);
+    if (!key) return false;
     prune();
-    const entry = failures.get(ip);
+    const entry = failures.get(key);
     if (!entry || Date.now() - entry.firstAt > THROTTLE_WINDOW_MS) {
-      failures.set(ip, { count: 1, firstAt: Date.now() });
+      failures.set(key, { count: 1, firstAt: Date.now() });
       return false;
     }
     entry.count += 1;
     return entry.count >= THROTTLE_MAX_FAILURES;
   }
 
-  function clearFailures(ip) {
-    if (ip) failures.delete(ip);
+  function clearFailures(ip, name) {
+    const key = bucketKey(ip, name);
+    if (key) failures.delete(key);
   }
 
   return {
@@ -264,6 +294,7 @@ export function createAccountStore({ hostRoot, logger = console }) {
     isThrottled,
     recordFailure,
     clearFailures,
+    unreadable: () => unreadable,
     _internal: { readAll, writeAll, sessions },
   };
 }

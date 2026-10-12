@@ -41,8 +41,10 @@ export function createStaticHandler({ root, spaFallback = 'index.html', readAsse
       if (!found) return null;
       return { file: relative, info: { size: found.buffer.length, mtimeMs: 0 }, buffer: found.buffer };
     }
-    let target = path.join(root, relative);
-    if (!target.startsWith(root)) return null;
+    // 用 resolve + 分隔符判断，别用字符串前缀：`C:\...\web` 会「包含」`C:\...\web-evil`。
+    const safeRoot = path.resolve(root);
+    let target = path.resolve(safeRoot, relative);
+    if (!target.startsWith(safeRoot + path.sep)) return null;
     let info;
     try {
       info = await stat(target);

@@ -72,7 +72,7 @@ async function collectVectorSources(repo, engine, collection = null) {
     }
   }
   if (wanted('memory')) {
-    for (const row of repo.all('SELECT id, title, content FROM memories')) {
+    for (const row of repo.all('SELECT id, title, content, updated_at, created_at FROM memories')) {
       const content = `${row.title ? `${row.title}\n` : ''}${row.content ?? ''}`.trim();
       if (content) out.push({ collection: 'memory', sourceId: row.id, content, meta: { title: row.title ?? '记忆', timestamp: row.updated_at ?? row.created_at ?? null } });
     }
@@ -84,7 +84,7 @@ async function collectVectorSources(repo, engine, collection = null) {
     }
   }
   if (wanted('history')) {
-    for (const row of repo.all("SELECT id, content FROM chat_messages WHERE content != '' ORDER BY created_at DESC LIMIT 2000")) {
+    for (const row of repo.all("SELECT id, content, created_at FROM chat_messages WHERE content != '' ORDER BY created_at DESC LIMIT 2000")) {
       if (row.content) out.push({ collection: 'history', sourceId: row.id, content: row.content, meta: { timestamp: row.created_at ?? null, title: '历史对话' } });
     }
   }

@@ -24,7 +24,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { existsSync, rmSync } from 'node:fs';
 
-import { SESSION_COOKIE, newSessionToken, parseCookies, serializeCookie, publicAccount } from '../core/accounts.mjs';
+import { SESSION_COOKIE, newSessionToken, normaliseUsername, parseCookies, serializeCookie, publicAccount } from '../core/accounts.mjs';
 import { createLogger } from './log.mjs';
 import { createAccountStore } from './accounts.mjs';
 import { createTenantManager } from './tenants.mjs';
@@ -118,11 +118,13 @@ export function createHost({
     const account = session ? accounts.find(session.name) : null;
     return {
       multiUser: true,
-      setupRequired: accounts.count() === 0,
+      setupRequired: accounts.count() === 0 && !accounts.unreadable(),
       authenticated: Boolean(account && !account.disabled),
       user: account ? publicAccount(account) : null,
-      // 没登录就不暴露服务器路径
-      hostRoot: account ? hostRoot : null,
+      // 宿主根目录属于"主机结构"信息：成员拿到它就能去猜别人的租户目录在哪（配合路径类缺陷就是定位前提）。
+      // 只有管理员需要它（主机管理页要显示数据目录）。
+      hostRoot: account?.role === 'admin' ? hostRoot : null,
+      accountsUnreadable: Boolean(accounts.unreadable()),
       version,
     };
   }
@@ -164,6 +166,11 @@ export function createHost({
     }
 
     if (pathname === '/api/auth/setup' && method === 'POST') {
+      // 账号表读不出来时**不能**当成"还没建号"：那会重新开放首次建号，
+      // 谁先来谁就是管理员，而且建号会覆盖掉原来的账号表。
+      if (accounts.unreadable()) {
+        return ctx.fail(503, 'ACCOUNTS_UNREADABLE', '账号表读不出来（文件坏了或权限不对）。修好它再建号 —— 现在建号会把原来的账号表覆盖掉。');
+      }
       if (accounts.count() > 0) return ctx.fail(409, 'CONFLICT', '已经有账号了，直接登录；要加人让管理员在总览里加');
       const body = (await ctx.body()) ?? {};
       const account = accounts.create({ name: body.name, password: body.password, role: 'admin', note: '第一个账号（管理员）' });
@@ -176,17 +183,21 @@ export function createHost({
 
     if (pathname === '/api/auth/login' && method === 'POST') {
       const ip = clientIp(ctx.req, trustProxy);
-      if (accounts.isThrottled(ip)) {
+      const body = (await ctx.body()) ?? {};
+      // 失败计数按「IP + 目标账号」分桶，所以成功登录只清自己这个账号的额度 ——
+      // 按 IP 一个桶的话，任何持有一个有效账号的人都能「9 次猜管理员 + 正常登录自己」
+      // 把额度刷回去，管理员口令就只剩长度约束了。
+      const loginName = String(body.name ?? '').trim().toLowerCase();
+      if (accounts.isThrottled(ip, loginName)) {
         return ctx.fail(429, 'TOO_MANY_ATTEMPTS', '失败次数太多了，等十分钟再试');
       }
-      const body = (await ctx.body()) ?? {};
       const account = accounts.authenticate(body.name, body.password);
       if (!account) {
-        accounts.recordFailure(ip);
+        accounts.recordFailure(ip, loginName);
         return ctx.fail(401, 'BAD_CREDENTIALS', '账号或口令不对');
       }
       if (account.disabled) return ctx.fail(403, 'ACCOUNT_DISABLED', '这个账号被停用了');
-      accounts.clearFailures(ip);
+      accounts.clearFailures(ip, loginName);
       const token = newSessionToken();
       accounts.startSession(account.name, { token, ip });
       ctx.state.session = { name: account.name, role: account.role, token };
@@ -245,7 +256,9 @@ export function createHost({
     if (userMatch && (method === 'POST' || method === 'PATCH')) {
       const session = requireAdmin(ctx);
       if (!session) return true;
-      const target = decodeParam(userMatch[1]);
+      // 统一走 normaliseUsername：accounts.find/require 内部会转小写，
+      // 这里不转的话 `PATCH /api/host/users/ADMIN` 能绕过下面那条"别把自己停用 / 降级"的检查。
+      const target = normaliseUsername(decodeParam(userMatch[1]));
       const body = (await ctx.body()) ?? {};
       const beingDemoted = body.role === 'user' || body.disabled === true;
       if (target === session.name && beingDemoted) {

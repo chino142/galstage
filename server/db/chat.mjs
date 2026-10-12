@@ -247,15 +247,29 @@ export function createChatStore({ repo }) {
   // ---------------------------------------------------------------- 消息
 
   function listMessages(chatId, { limit = null, afterSeq = null } = {}) {
+    const take = Number(limit) > 0 ? Number(limit) : null;
+    const incremental = afterSeq !== null && afterSeq !== undefined;
     let sql = `SELECT * FROM chat_messages WHERE chat_id = ?`;
     const params = [chatId];
-    if (afterSeq !== null && afterSeq !== undefined) {
+    if (incremental) {
       sql += ' AND seq > ?';
       params.push(Number(afterSeq));
     }
+    // 「最近 N 条」要按 seq 倒序 LIMIT 再从尾到头翻回来。
+    // 以前是 ORDER BY seq ASC 全量取回、再在 JS 里 slice(-limit)：数据库照样把上万条
+    // 一条条读出来，limit 只省了内存、没省查询 —— 而这类软件动辄上万条消息。
+    // 增量取（给了 afterSeq）时语义相反，从 seq 之后**往后**拿 N 条，所以分开写。
+    if (take && !incremental) {
+      sql += ' ORDER BY seq DESC LIMIT ?';
+      params.push(take);
+      return repo.all(sql, params).map(messageToObject).reverse();
+    }
     sql += ' ORDER BY seq ASC';
-    const rows = repo.all(sql, params).map(messageToObject);
-    return limit ? rows.slice(-Number(limit)) : rows;
+    if (take) {
+      sql += ' LIMIT ?';
+      params.push(take);
+    }
+    return repo.all(sql, params).map(messageToObject);
   }
 
   function getMessage(chatId, messageId) {
